@@ -1,0 +1,849 @@
+#include "efi.h"
+#if defined(__GNUC__) || defined(__clang__)
+#include <cpuid.h>
+#endif
+
+void uefi_print(EFI_SYSTEM_TABLE *st, const CHAR16 *str);
+void uefi_println(EFI_SYSTEM_TABLE *st, const CHAR16 *str);
+void uefi_status_print(EFI_SYSTEM_TABLE *st, EFI_STATUS stat);
+void uefi_status_println(EFI_SYSTEM_TABLE *st, EFI_STATUS stat);
+
+EFI_GUID gEfiPciIoProtocolGuid =
+ {0x4cf5b200,0x68b8,0x4ca5,{0x9e,0xec,0xb2,0x3e,0x3f,0x50,0x02,0x9a}};
+
+EFI_BOOT_SERVICES *gBS;
+
+typedef struct {
+    UINT16 id;
+    const char *name;
+} pci_vendor_t;
+
+static const pci_vendor_t pci_vendors[] = {
+    { 0x8086, "Intel"   },
+    { 0x10DE, "NVIDIA"  },
+    { 0x1002, "AMD"     },
+    { 0x1022, "AMD"     }, // legacy
+    { 0x1234, "QEMU VGA"},
+    { 0x1AF4, "VirtIO"  },
+    { 0x1B36, "Red Hat" },
+};
+
+typedef struct {
+    const CHAR16 *string;
+    int is;
+} cpu_vendor_identifiers;
+
+static const cpu_vendor_identifiers isCPUVMArray[] = { 
+    // Its kinda simple but easly bypassed with hardware spoofing, but its mainly for gpu detections
+    { L"AuthenticAMD", 0 },
+    { L"AMDisbetter!", 0 }, // Early engineering samples of AMD K5 processor
+    { L"GenuineIntel", 0 },
+    { L"VIAVIAVIA", 0 },
+    { L"GenuineTMx86", 0 },
+    { L"TransmetaCPU", 0 },
+    { L"CyrixInstead", 0 },
+    { L"CentaurHauls", 0 },
+    { L"NexGenDriven", 0 },
+    { L"UMCUMCUMC", 0 },
+    { L"SiSSiSSiS", 0 },
+    { L"GeodebyNSC", 0 },
+    { L"RiseRiseRise", 0 },
+    { L"Vortex86SoC", 0 },
+    { L"MiSTerAO486", 0 },
+    { L"GenuineAO486", 0 },
+    { L"Shanghai", 0 },
+    { L"HygonGenuine", 0 },
+    { L"E2K MACHINE ", 0 },
+    
+    // Vendor strings from hypervisors.
+    { L"TCGTCGTCGTCG", 1 },
+    { L"KVMKVMKVM", 1 },
+    { L"VMwareVMware", 1 },
+    { L"VBoxVBoxVBox", 1 },
+    { L"XenVMMXenVMM", 1 },
+    { L"MicrosoftHv", 1 },
+    { L"prlhyperv", 1 },
+    { L"lrpepyhvr", 1 },
+    { L"bhyvebhyve", 1 },
+    { L"QNXQVMBSQG", 1 },
+};
+
+int strcmp16(const CHAR16 *x, const CHAR16 *y) {
+    while (*x && (*x == *y)) {
+        x++;
+        y++;
+    }
+    return (int)(*x - *y);
+}
+
+int isCPUVM(const CHAR16 *string) {
+    int count = sizeof(isCPUVMArray) / sizeof(isCPUVMArray[0]);
+    for (int i = 0; i < count; i++) {
+        if (strcmp16(string, isCPUVMArray[i].string) == 0) {
+            return isCPUVMArray[i].is;
+        }
+    }
+    return 2; // unknown
+}
+
+// convert ASCII to UEFI CHAR16 string
+void ascii_to_char16(const char *src, CHAR16 *dst, size_t max_len) {
+    size_t i;
+    for (i = 0; i < max_len-1 && src[i]; i++) {
+        dst[i] = (CHAR16)src[i];
+    }
+    dst[i] = 0; // null-terminate
+}
+
+// convert UINTN to CHAR16 string
+void decimalConvert(UINTN n, CHAR16 *buf, size_t buf_size) {
+    size_t pos = 0;
+
+    if(buf_size == 0) return;
+
+    do {
+        if(pos >= buf_size - 1) break;
+        buf[pos++] = L'0' + (n % 10);
+        n /= 10;
+    } while(n);
+
+    buf[pos] = 0;
+
+    // reverse string
+    for(size_t i = 0; i < pos / 2; i++) {
+        CHAR16 t = buf[i];
+        buf[i] = buf[pos - 1 - i];
+        buf[pos - 1 - i] = t;
+    }
+}
+
+// helper to print a line with CRLF
+void uefi_println(EFI_SYSTEM_TABLE *st, const CHAR16 *str) {
+    st->ConOut->OutputString(st->ConOut, str);
+    st->ConOut->OutputString(st->ConOut, L"\r\n");
+}
+
+void uefi_print(EFI_SYSTEM_TABLE *st, const CHAR16 *str) {
+    st->ConOut->OutputString(st->ConOut, str);
+}
+
+typedef struct {
+    const CHAR16 *name;
+    EFI_STATUS value;
+} efi_stat_char16_struct;
+
+efi_stat_char16_struct const efi_status_char16[] = {
+    { L"EFI_LOAD_ERROR", EFI_LOAD_ERROR },
+    { L"EFI_INVALID_PARAMETER", EFI_INVALID_PARAMETER },
+    { L"EFI_UNSUPPORTED", EFI_UNSUPPORTED },
+    { L"EFI_BAD_BUFFER_SIZE", EFI_BAD_BUFFER_SIZE },
+    { L"EFI_BUFFER_TOO_SMALL", EFI_BUFFER_TOO_SMALL },
+    { L"EFI_NOT_READY", EFI_NOT_READY },
+    { L"EFI_DEVICE_ERROR", EFI_DEVICE_ERROR },
+    { L"EFI_WRITE_PROTECTED", EFI_WRITE_PROTECTED },
+    { L"EFI_OUT_OF_RESOURCES", EFI_OUT_OF_RESOURCES },
+    { L"EFI_VOLUME_CORRUPTED", EFI_VOLUME_CORRUPTED },
+    { L"EFI_VOLUME_FULL", EFI_VOLUME_FULL },
+    { L"EFI_NO_MEDIA", EFI_NO_MEDIA },
+    { L"EFI_MEDIA_CHANGED", EFI_MEDIA_CHANGED },
+    { L"EFI_NOT_FOUND", EFI_NOT_FOUND },
+    { L"EFI_ACCESS_DENIED", EFI_ACCESS_DENIED },
+    { L"EFI_NO_RESPONSE", EFI_NO_RESPONSE },
+    { L"EFI_NO_MAPPING", EFI_NO_MAPPING },
+    { L"EFI_TIMEOUT", EFI_TIMEOUT },
+    { L"EFI_NOT_STARTED", EFI_NOT_STARTED },
+    { L"EFI_ALREADY_STARTED", EFI_ALREADY_STARTED },
+    { L"EFI_ABORTED", EFI_ABORTED },
+    { L"EFI_ICMP_ERROR", EFI_ICMP_ERROR },
+    { L"EFI_TFTP_ERROR", EFI_TFTP_ERROR },
+    { L"EFI_PROTOCOL_ERROR", EFI_PROTOCOL_ERROR },
+    { L"EFI_INCOMPATIBLE_VERSION", EFI_INCOMPATIBLE_VERSION },
+    { L"EFI_SECURITY_VIOLATION", EFI_SECURITY_VIOLATION },
+    { L"EFI_CRC_ERROR", EFI_CRC_ERROR },
+    { L"EFI_END_OF_MEDIA", EFI_END_OF_MEDIA },
+    { L"EFI_END_OF_FILE", EFI_END_OF_FILE },
+    { L"EFI_INVALID_LANGUAGE", EFI_INVALID_LANGUAGE },
+    { L"EFI_COMPROMISED_DATA", EFI_COMPROMISED_DATA },
+    { L"EFI_IP_ADDRESS_CONFLICT", EFI_IP_ADDRESS_CONFLICT },
+    { L"EFI_HTTP_ERROR", EFI_HTTP_ERROR },
+    // name, value
+};
+
+void uefi_status_println(EFI_SYSTEM_TABLE *st, EFI_STATUS stat) {
+    EFI_STATUS code = stat & ~EFI_ERROR_BIT;
+    UINTN count = sizeof(efi_status_char16) / sizeof(efi_status_char16[0]);
+    for (UINTN i = 0; i < count; i++) {
+        EFI_STATUS value = efi_status_char16[i].value; // Because it is pointer, now its value!
+        if (value == code) {
+            st->ConOut->OutputString(st->ConOut, efi_status_char16[i].name);
+            st->ConOut->OutputString(st->ConOut, L"\r\n");
+            return;
+        }
+    }
+    st->ConOut->OutputString(st->ConOut, L"EFI_STATUS_UNKNOWN: ");
+    CHAR16 buf[32];
+    decimalConvert(code, buf, 32);
+    st->ConOut->OutputString(st->ConOut, buf);
+    st->ConOut->OutputString(st->ConOut, L"\r\n");
+}
+
+void uefi_status_print(EFI_SYSTEM_TABLE *st, EFI_STATUS stat) {
+    EFI_STATUS code = stat & ~EFI_ERROR_BIT;
+    UINTN count = sizeof(efi_status_char16) / sizeof(efi_status_char16[0]);
+    for (UINTN i = 0; i < count; i++) {
+        EFI_STATUS value = efi_status_char16[i].value; // Because it is pointer, now its value!
+        if (value == code) {
+            st->ConOut->OutputString(st->ConOut, efi_status_char16[i].name);
+            return;
+        }
+    }
+    st->ConOut->OutputString(st->ConOut, L"EFI_STATUS_UNKNOWN: ");
+    CHAR16 buf[32];
+    decimalConvert(code, buf, 32);
+    st->ConOut->OutputString(st->ConOut, buf);
+}
+
+typedef struct {
+    const CHAR16 *name;
+    EFI_GRAPHICS_PIXEL_FORMAT value;
+} efi_pixel_map;
+
+efi_pixel_map efi_pixel_map_array[] = {
+    {L"PixelRedGreenBlueReserved8BitPerColor", PixelRedGreenBlueReserved8BitPerColor},
+    {L"PixelBlueGreenRedReserved8BitPerColor", PixelBlueGreenRedReserved8BitPerColor},
+    {L"PixelBitMask", PixelBitMask},
+    {L"PixelBltOnly", PixelBltOnly},
+    {L"PixelFormatMax", PixelFormatMax},
+};
+
+void printGOPStats(EFI_SYSTEM_TABLE *st, EFI_GRAPHICS_OUTPUT_MODE_INFORMATION info) {
+    UINT32 version = info.Version;
+    UINT32 HorizontalResolution = info.HorizontalResolution;
+    UINT32 VerticalResolution = info.VerticalResolution;
+    EFI_GRAPHICS_PIXEL_FORMAT pixelFormat = info.PixelFormat;
+    EFI_PIXEL_BITMASK PixelInformation = info.PixelInformation;
+    UINT32 PixelsPerScanLine = info.PixelsPerScanLine;
+
+    CHAR16 versionBuf[32];
+    CHAR16 HorizontalResolutionBuf[32];
+    CHAR16 VerticalResolutionBuf[32];
+    CHAR16 PixelsPerScanLineBuf[128];
+
+    decimalConvert(version, versionBuf, 32);
+    decimalConvert(HorizontalResolution, HorizontalResolutionBuf, 32);
+    decimalConvert(VerticalResolution, VerticalResolutionBuf, 32);
+    decimalConvert(PixelsPerScanLine, PixelsPerScanLineBuf, 32);
+
+    CHAR16 pixelFormatChar16 = L"NoneFound";
+    for (UINTN i = 0; i < sizeof(efi_pixel_map_array)/sizeof(efi_pixel_map_array[0]); i++) {
+        efi_pixel_map a = efi_pixel_map_array[i];
+        if (a.value == pixelFormat)
+            pixelFormatChar16 = a.name;
+    }
+
+    uefi_println(st, L"M--------------------");
+    uefi_print(st, L"\tVersion             :");
+    uefi_println(st, version);
+    uefi_print(st, L"\tResolution          :");
+    uefi_print(st, HorizontalResolutionBuf);
+    uefi_print(st, L"x");
+    uefi_println(st, VerticalResolutionBuf);
+    uefi_print(st, L"\tPixel per scanline  :");
+    uefi_println(st, PixelsPerScanLineBuf);
+    uefi_print(st, L"\tPixel formation     :");
+    uefi_println(st, pixelFormatChar16);
+}
+
+const char *pci_vendor_name(UINT16 id, int *status) {
+    for (UINTN i = 0; i < sizeof(pci_vendors)/sizeof(pci_vendors[0]); i++) {
+        if (pci_vendors[i].id == id)
+            return pci_vendors[i].name;
+    }
+    *status = 1;
+    return "Unknown";
+}
+
+void get_cpu_vendor(char vendor[13]) {
+    unsigned int eax, ebx, ecx, edx;
+    __get_cpuid(0, &eax, &ebx, &ecx, &edx);
+    ((unsigned int*)vendor)[0] = ebx;
+    ((unsigned int*)vendor)[1] = edx;
+    ((unsigned int*)vendor)[2] = ecx;
+    vendor[12] = 0;
+}
+
+void get_cpu_brand(char brand[49]) {
+    unsigned int regs[4];
+    for (unsigned int i = 0; i < 3; i++) {
+        __get_cpuid(0x80000002 + i, &regs[0], &regs[1], &regs[2], &regs[3]);
+        ((unsigned int*)brand)[i*4 + 0] = regs[0];
+        ((unsigned int*)brand)[i*4 + 1] = regs[1];
+        ((unsigned int*)brand)[i*4 + 2] = regs[2];
+        ((unsigned int*)brand)[i*4 + 3] = regs[3];
+    }
+    brand[48] = 0;
+}
+
+void vendor_to_char16(const char vendor[13], CHAR16 vendor16[13]) {
+    for (int i = 0; i < 12; i++) {
+        vendor16[i] = (vendor[i] == 0 ? L' ' : (CHAR16)vendor[i]);
+    }
+    vendor16[12] = 0; // null terminate
+}
+
+EFI_EVENT gopEventCallProceed;
+
+VOID EFIAPI GopInstalledCallback(
+    IN EFI_EVENT Event,
+    IN VOID      *Context
+) {
+    EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
+    EFI_GUID gEfiGraphicsOutputProtocolGuid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+    VOID *GopRegistration = NULL;
+
+    if (!EFI_ERROR(
+        gBS->LocateProtocol(
+            &gEfiGraphicsOutputProtocolGuid,
+            GopRegistration,
+            (VOID **)&Gop
+        )
+    )) {
+        // Now its defined
+        gBS->SignalEvent(gopEventCallProceed);
+    }
+}
+
+EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
+    gBS = SystemTable->BootServices;
+    SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
+
+    uefi_println(SystemTable, L"[System] Booted, 1st stage...");
+    uefi_println(SystemTable, L"[System] Machine stats:");
+    uefi_println(SystemTable, L"-----------------------");
+    uefi_print(SystemTable, L"Firmware Vendor: ");
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, SystemTable->FirmwareVendor);
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"\r\n");
+
+    unsigned int max_ext;
+    __get_cpuid(0x80000000, &max_ext, NULL, NULL, NULL);
+
+    uefi_println(SystemTable, L"----- CPU -----");
+    CHAR16 vendor16[13];
+    if (max_ext < 0x80000004) {
+        uefi_println(SystemTable, L"CPUID is not supported.");
+    } else {
+        char vendor[13];
+        get_cpu_vendor(vendor);
+        vendor_to_char16(vendor, vendor16);
+
+        uefi_print(SystemTable, L"CPU Vendor string: ");
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, vendor16);
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"\r\n");
+
+        char brand[50];
+        CHAR16 brand16[64];
+        get_cpu_brand(brand);
+        ascii_to_char16(brand, brand16, 64);
+
+        uefi_print(SystemTable, L"CPU: ");
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, brand16);
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"\r\n");
+    }
+
+    int a = isCPUVM(vendor16);
+    
+    if (a == 1)
+        goto gpu_pci_end; // Pekne jasne vystizne. Poslat ostatnych do riti
+    
+    if (a == 2) {
+        uefi_println(SystemTable->ConOut, L"Failed to recognise CPU, not registered in database.");
+    }
+
+    
+    uefi_println(SystemTable, L"----- GPU (PCI/e) -----");
+    
+    EFI_HANDLE *Handles = NULL;
+    UINTN Count = 0;
+
+    EFI_STATUS st = gBS->LocateHandleBuffer(
+        ByProtocol,
+        &gEfiPciIoProtocolGuid,
+        NULL,
+        &Count,
+        &Handles
+    );
+
+    if (EFI_ERROR(st)) {
+        uefi_println(SystemTable, L"PCI scan failed.");
+        return EFI_SUCCESS;
+    }
+
+    CHAR16 buf_count[25];
+    decimalConvert(Count, buf_count, 25);
+
+    uefi_print(SystemTable, L"Detected devices (PCI / PCIe): ");
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, buf_count);
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"\r\n");
+
+    for (UINTN i = 0; i < Count; i++) {
+        EFI_PCI_IO_PROTOCOL *PciIo;
+        EFI_STATUS st = gBS->HandleProtocol(
+            Handles[i],
+            &gEfiPciIoProtocolGuid,
+            (void**)&PciIo
+        );
+
+        EFI_STATUS ast = PciIo->Attributes(
+            PciIo,
+            EfiPciIoAttributeOperationEnable,
+            EfiPciIoAttributeBusMaster |
+            EfiPciIoAttributeMemory |
+            EfiPciIoAttributeIo,
+            NULL
+        );
+
+        if (EFI_ERROR(ast)) continue;
+        if (EFI_ERROR(st)) continue;
+
+        UINT16 VendorId;
+        EFI_STATUS pst = PciIo->Pci.Read(PciIo, EfiPciIoWidthUint16, 0x00, 1, &VendorId);
+        
+        if (EFI_ERROR(pst)) continue;
+        if (VendorId == 0x0000 || VendorId == 0xFFFF) continue;
+
+        UINT32 Class;
+        if (EFI_ERROR(PciIo->Pci.Read(PciIo, EfiPciIoWidthUint32, 0x08, 1, &Class))) {
+            uefi_println(SystemTable, L"PCI read failed");
+            continue;
+        }
+        
+        UINT8 BaseClass = (Class >> 24) & 0xFF;
+        //UINT8 SubClass  = (Class >> 16) & 0xFF;
+        //UINT8 ProgIf    = (Class >> 8)  & 0xFF;
+
+        if (BaseClass != 0x03 && VendorId != 0x00) {
+            continue;
+        }
+
+        CHAR16 vendor_name[32];
+        int i = 0; // If this is 1 the vendorId is not regognised
+        ascii_to_char16(pci_vendor_name(VendorId, &i), vendor_name, 32); // add if unknow
+
+        uefi_print(SystemTable, L"Found device: ");
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, vendor_name);
+        if (i != 0) {
+            uefi_print(SystemTable, L" 0x");
+            CHAR16 vendorid[25];
+            decimalConvert(VendorId, vendorid, 25);
+            uefi_print(SystemTable, vendorid);
+        }
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"\r\n");
+    }
+    gBS->FreePool(Handles);
+gpu_pci_end:
+
+    uefi_println(SystemTable, L" --- GPU --- ");
+    EFI_GUID gEfiGraphicsOutputProtocolGuid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+    EFI_HANDLE *GopHandles;
+    UINTN GopCount;
+
+    EFI_STATUS Status = gBS->LocateHandleBuffer(
+        ByProtocol,
+        &gEfiGraphicsOutputProtocolGuid,
+        NULL,
+        &GopCount,
+        &GopHandles
+    );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Failed GPU lookup... (Terminating)");
+        goto gpu_gop_end;
+    }
+    uefi_print(SystemTable, L"[*] GPU (GOP) devices found: ");
+    CHAR16 buf[8];
+    decimalConvert(GopCount, buf, 8);
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, buf);
+    uefi_println(SystemTable, L"");
+    uefi_println(SystemTable, L"[+] Identifing for GPU's...");
+
+    for (UINTN i = 0; i < GopCount; i++) {
+        EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
+        EFI_STATUS Status = gBS->HandleProtocol(
+            GopHandles[i],
+            &gEfiGraphicsOutputProtocolGuid,
+            (void**)&Gop
+        );
+        if (EFI_ERROR(Status)) continue;
+
+        EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info = Gop->Mode->Info;
+        CHAR16 buf[16];
+
+        uefi_print(SystemTable, L"\r\nGPU ");
+        CHAR16 gpu_count[32];
+        decimalConvert(i, gpu_count, 32);
+        uefi_print(SystemTable, gpu_count);
+        uefi_println(SystemTable, L"");
+        uefi_print(SystemTable, L"GPU resolution: ");
+        decimalConvert(Info->HorizontalResolution, buf, 16);
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, buf);
+        uefi_print(SystemTable, L"x");
+        decimalConvert(Info->VerticalResolution, buf, 16);
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, buf);
+        uefi_print(SystemTable, L", Pixels per scanline: ");
+        decimalConvert(Info->PixelsPerScanLine, buf, 16);
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, buf);
+        uefi_print(SystemTable, L"\r\n");
+
+        uefi_print(SystemTable, L"Framebuffer base: 0x");
+        decimalConvert((UINTN)Gop->Mode->FrameBufferBase, buf, 16);
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, buf);
+
+        uefi_print(SystemTable, L", Size: ");
+        decimalConvert(Gop->Mode->FrameBufferSize, buf, 16);
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, buf);
+        uefi_println(SystemTable, L"\r\n");
+    }
+
+gpu_gop_end:
+    uefi_println(SystemTable, L"--- RAM ---");
+    uefi_println(SystemTable, L"In progress.\r\n");
+
+    uefi_println(SystemTable, L"--- KERNEL ---");
+    uefi_println(SystemTable, L"[+] Loading main kernel...");
+
+    //goto kernel_load_end; // DISABLED, disabled load kernel for now.
+
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs;
+    EFI_FILE_PROTOCOL *root;
+    EFI_FILE_PROTOCOL *kernelFile;
+    EFI_FILE_PROTOCOL *fileProt;
+    EFI_FILE_INFO *fileInfo = NULL;
+
+    // Locate the file system protocol
+    EFI_GUID fsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
+    Status = gBS->LocateProtocol(&fsGuid, NULL, (void**)&fs);
+    if (EFI_ERROR(Status)) return Status;
+
+    // Open the root volume
+    Status = fs->OpenVolume(fs, &root);
+    if (EFI_ERROR(Status)) return Status;
+    Status = root->Open(
+        root,
+        &kernelFile,
+        L"kernel.bin",
+        EFI_FILE_MODE_READ,
+        0
+    );
+    if (EFI_ERROR(Status)) return Status;
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Failed to read kernel.");
+        goto panic;
+    }
+    fileProt = root;
+    EFI_GUID gEfiFileInfoGuid = EFI_FILE_INFO_ID;
+    UINTN Size = 0;
+    UINTN bufferSize = 0;
+    Status = fileProt->GetInfo(fileProt, &gEfiFileInfoGuid, &bufferSize, NULL);
+    if (Status != EFI_BUFFER_TOO_SMALL) {
+        uefi_println(SystemTable, L"[!] Failed to get file...");
+        goto panic;
+    }
+
+    Status = gBS->AllocatePool(
+        EfiLoaderData,
+        bufferSize,
+        (void**)&fileInfo
+    );
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] AllocatePool failed");
+        goto panic;
+    }
+
+    Status = fileProt->GetInfo(
+        fileProt,
+        &gEfiFileInfoGuid,
+        &bufferSize,
+        fileInfo
+    );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] GetInfo failed");
+        goto panic;
+    }
+
+    UINTN kernelSize = fileInfo->FileSize;
+    uefi_println(SystemTable, L"[+] Reading file...");
+    void *kernelBuffer = NULL;
+    Status = gBS->AllocatePool(
+        EfiLoaderData,
+        kernelSize,
+        &kernelBuffer
+    );
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Failed to allocate kernel buffer");
+        goto panic;
+    }
+
+    UINTN bytesRead = kernelSize;
+    Status = fileProt->Read(
+        fileProt,
+        &bytesRead,
+        kernelBuffer
+    );
+
+    if (EFI_ERROR(Status) || bytesRead != kernelSize) {
+        uefi_println(SystemTable, L"[!] Failed to read kernel file");
+        goto panic;
+    }
+
+    EFI_PHYSICAL_ADDRESS kernelAddr = 0x100000;
+    gBS->AllocatePages(
+        AllocateAddress,
+        EfiLoaderData,
+        EFI_SIZE_TO_PAGES(kernelSize),
+        &kernelAddr
+    );
+
+    UINTN MemoryMapSize = 0;
+    EFI_MEMORY_DESCRIPTOR *MemoryMap = NULL;
+    UINTN MapKey;
+    UINTN DescriptorSize;
+    UINT32 DescriptorVersion;
+
+    /* First call: get required size */
+    gBS->GetMemoryMap(
+        &MemoryMapSize,
+        MemoryMap,
+        &MapKey,
+        &DescriptorSize,
+        &DescriptorVersion
+    );
+
+    /* Allocate buffer (+ some slack) */
+    MemoryMapSize += 2 * DescriptorSize;
+    gBS->AllocatePool(
+        EfiLoaderData,
+        MemoryMapSize,
+        (void**)&MemoryMap
+    );
+
+    /* Second call: get actual map */
+    Status = gBS->GetMemoryMap(
+        &MemoryMapSize,
+        MemoryMap,
+        &MapKey,
+        &DescriptorSize,
+        &DescriptorVersion
+    );
+
+kernel_load_end:
+    uefi_println(SystemTable, L" --- GPU GOP --- ");
+    uefi_println(SystemTable, L"[+] Loading GOP mode.");
+    EFI_GUID gopGUID = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+    EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
+    EFI_HANDLE Handle;
+    EFI_EVENT gopInstallEvent;
+    VOID *GopRegistration = NULL;
+    EFI_EVENT GopEvent;
+
+    Status = gBS->LocateProtocol(
+        &gopGUID,
+        NULL,
+        (VOID **)&gop
+    );
+    if (EFI_ERROR(Status)) {
+        Status = gBS->CreateEvent(
+            EVT_NOTIFY_SIGNAL,
+            TPL_CALLBACK,
+            GopInstalledCallback,
+            NULL,
+            &GopEvent
+        );
+
+        Status = gBS->RegisterProtocolNotify(
+            &gopGUID,
+            gopInstallEvent,
+            GopRegistration
+        );
+        UINTN Index;
+        gBS->WaitForEvent(1, &gopEventCallProceed, &Index);
+        CHAR16 *IndexBuf[64];
+        decimalConvert(Index, IndexBuf, 64);
+        uefi_print(SystemTable, L"[+] Load GOP exited with Index: ");
+        uefi_println(SystemTable, IndexBuf);
+    }
+
+    uefi_println(SystemTable, L"[*] Loaded GOP protocol.");
+    // I guess now we can use GOP
+    EFI_GUID gEfiEdidDiscoveredProtocolGuid = EFI_EDID_DISCOVERED_PROTOCOL_GUID;
+    EFI_EDID_DISCOVERED_PROTOCOL *Edid;
+    int pickhighestFlag = 0;
+    Status = gBS->LocateProtocol(
+        &gEfiEdidDiscoveredProtocolGuid, 
+        NULL, 
+        (VOID **)&Edid
+    );
+
+    // Parse the edid
+    if (Edid->SizeOfEdid < 128 || Edid->Edid == NULL) { // Docs say that available edid is bigger then 128
+        uefi_println(SystemTable, L"[!] No available information about monitor, picking highest resolution.");
+        pickhighestFlag = 1;
+        goto gop_pick;
+    }
+    
+    UINT8 *edid = Edid->Edid;
+    UINT8 *DTD = edid + 54;
+
+    UINT16 PixelClock = DTD[0] | (DTD[1] << 8);
+    if (PixelClock == 0) {
+        uefi_println(SystemTable, L"[!] No valid pixel clock.");
+        goto panic;
+    }
+    
+    UINT16 HActive = ((DTD[2] + ((DTD[4] & 0xF0) << 4)));
+    UINT16 VActive = ((DTD[5] + ((DTD[7] & 0xF0) << 4)));
+
+    UINT16 HTotal = HActive + (DTD[3] + ((DTD[4] & 0x0F) << 8));
+    UINT16 VTotal = VActive + (DTD[6] + ((DTD[7] & 0x0F) << 8));
+
+    float PixelClockHz = PixelClock * 10000;
+    float RefreshHz = PixelClockHz / (HTotal * VTotal);
+
+    int printGOP = 0; // Later it would be cool to read a config and print based of it
+    UINTN SizeOfInfo;
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info;
+    UINT32 choosenMode = 0;
+
+gop_pick:
+    for (UINTN i = 0; i < gop->Mode->MaxMode; i++) {
+        Status = gop->QueryMode(
+            gop,
+            i,
+            &SizeOfInfo,
+            &Info
+        );
+        if (!EFI_ERROR(Status)) {
+            if (printGOP == 1) printGOPStats(SystemTable, *Info);
+            if (pickhighestFlag == 0) {            
+                if (Info->VerticalResolution == VActive && Info->HorizontalResolution == HActive) { // Simple
+                    choosenMode = i;
+                    break;
+                }
+            } else {
+                choosenMode = gop->Mode->MaxMode - 1;
+                break;
+            }
+        } else {
+            uefi_println(SystemTable, L"[F] Failed to print Info about GOP mode.");
+        }
+    }
+    if (pickhighestFlag) {
+        goto gop_end;
+    }
+    // Only on real hardware this is possible
+    uefi_println(SystemTable, " --- Monitor ---");
+    uefi_print(SystemTable, L"Refresh rate: ");
+    CHAR16 RefreshRateBuf[64];
+    decimalConvert(RefreshHz, RefreshRateBuf, 64);
+    uefi_println(SystemTable, RefreshRateBuf);
+    uefi_print(SystemTable, L"Resolution: ");
+    CHAR16 HorizontalResolutionBuf[32];
+    CHAR16 VerticalResolutionBuf[32];
+    decimalConvert(HActive, HorizontalResolutionBuf, 32);
+    decimalConvert(VActive, VerticalResolutionBuf, 32);
+    uefi_print(SystemTable, HorizontalResolutionBuf);
+    uefi_print(SystemTable, L"x");
+    uefi_print(SystemTable, VerticalResolutionBuf);
+
+    // Now we gotta switch to GOP mode that was choosen
+gop_end:
+    uefi_println(SystemTable, L"[+] Press any key to enter new GOP mode.");
+    EFI_INPUT_KEY k;
+    while (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &k) != EFI_SUCCESS)
+        ;
+    UINT32* fb1 = NULL;
+    UINT32* fb2 = NULL;
+
+    Status = gop->SetMode(gop, choosenMode);
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, "[!] Failed to set GOP mode.");
+        goto panic;
+    }
+    SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
+
+    
+    UINTN width = gop->Mode->Info->HorizontalResolution;
+    UINTN height = gop->Mode->Info->VerticalResolution;
+    UINTN pitch = gop->Mode->Info->PixelsPerScanLine;
+    
+    /*
+    for (UINTN y = 0; y < height; y++) {
+        for (UINTN x = 0; x < width; x++) {
+            fb[y * pitch + x] = 0x000000FF; // Blue in BGRA/ARGB
+        }
+    }
+    */
+    // Initialize FB1 and FB2 and switch between them
+    // It will only be written into FB1 and a function will
+    // Switch content from FB1 to FB2; more lag but it is better and faster
+    // for reading and etc.
+    // this system may be slower in case of CPU-only rendering BUT is it 
+    // Way more better on GPU, but for now it is CPU only
+    // Ill code it here, and then Ill transform it into the kernel
+
+    Status = SystemTable->BootServices->AllocatePool(
+        EfiLoaderData,
+        width * height * sizeof(UINT32),
+        (void**)&fb1
+    );
+
+    for (UINTN y = 0; y < height; y++) {
+        for (UINTN x = 0; x < width; x++) {
+            fb1[y * pitch + x] = 0x000000FF;
+        }
+    }
+
+    // transform to fb2, not safe, not mem safe, just ahh
+    fb2 = fb1;
+    // Yea 
+
+    // Ill like to make an Event-like thing that will
+    // that will trigger event when the fb1 is drawn then async with that 
+
+    // Print the lines and show components funcitonality
+    // components -> GPU, GOP, CPU, Monitor
+    // No only the stats
+    /*
+    int padding = 55;
+    for (UINTN x = 0; x < HActive; x++) {
+        for (UINTN y = 0; x < VActive; y++) {
+            
+        }
+    }
+    */
+    
+
+    // Here we need to allocate buffers and pass them to the kernel (if the kernel loaded)
+    // which indeed didn't so we gotta just skip to ass
+    goto panic; // Because of disabled kernel loading
+
+    fileProt->Read(fileProt, &kernelSize, (void*)kernelAddr);
+    typedef void (*KernelEntry)(void);
+    KernelEntry entry = (KernelEntry)kernelBuffer;
+    Status = gBS->ExitBootServices(ImageHandle, MapKey);
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] ExitBootServices failed");
+        goto panic;
+    }
+
+    entry();
+
+panic:
+    uefi_println(SystemTable, L"(panic) Press any key to shutdown.");
+
+    EFI_INPUT_KEY key;
+    while (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &key) != EFI_SUCCESS);
+    SystemTable->RuntimeServices->ResetSystem(EfiResetShutdown, EFI_SUCCESS, 0, NULL);
+    return EFI_SUCCESS;
+}
