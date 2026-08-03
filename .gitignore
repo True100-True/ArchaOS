@@ -1,0 +1,11 @@
+*.o
+
+*.elf
+*.bin
+*.map
+*.iso
+*.img
+*.EFI
+.tags
+
+kernel/toolchain/

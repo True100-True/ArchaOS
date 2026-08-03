@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+
 // ------------------ Basic Types ------------------
 #define IN
 #define OUT
@@ -44,44 +45,44 @@ typedef UINTN EFI_TPL;
 
 #define EFI_SUCCESS 0
 #define EFIAPI __attribute__((ms_abi))
-#define EFI_ERROR(Status) (((EFI_STATUS)(Status)) != EFI_SUCCESS)
+#define EFI_ERROR(Status) (((EFI_STATUS)(Status) & EFI_ERROR_BIT) != 0)
 #define EFI_ERROR_BIT 0x8000000000000000
 #define EFI_STATUS_CODE(s) ((s) & ~EFI_ERROR_BIT)
 #define EFI_SIZE_TO_PAGES(Size)  (((Size) >> EFI_PAGE_SHIFT) + (((Size) & EFI_PAGE_MASK) ? 1 : 0))
 
-#define EFI_LOAD_ERROR 1
-#define EFI_INVALID_PARAMETER 2
-#define EFI_UNSUPPORTED 3
-#define EFI_BAD_BUFFER_SIZE 4
-#define EFI_BUFFER_TOO_SMALL 5
-#define EFI_NOT_READY 6
-#define EFI_DEVICE_ERROR 7
-#define EFI_WRITE_PROTECTED 8
-#define EFI_OUT_OF_RESOURCES 9
-#define EFI_VOLUME_CORRUPTED 10
-#define EFI_VOLUME_FULL 11
-#define EFI_NO_MEDIA 12
-#define EFI_MEDIA_CHANGED 13
-#define EFI_NOT_FOUND 14
-#define EFI_ACCESS_DENIED 15
-#define EFI_NO_RESPONSE 16
-#define EFI_NO_MAPPING 17
-#define EFI_TIMEOUT 18
-#define EFI_NOT_STARTED 19
-#define EFI_ALREADY_STARTED 20
-#define EFI_ABORTED 21
-#define EFI_ICMP_ERROR 22
-#define EFI_TFTP_ERROR 23
-#define EFI_PROTOCOL_ERROR 24
-#define EFI_INCOMPATIBLE_VERSION 25
-#define EFI_SECURITY_VIOLATION 26
-#define EFI_CRC_ERROR 27
-#define EFI_END_OF_MEDIA 28
-#define EFI_END_OF_FILE 31
-#define EFI_INVALID_LANGUAGE 32
-#define EFI_COMPROMISED_DATA 33
-#define EFI_IP_ADDRESS_CONFLICT 34
-#define EFI_HTTP_ERROR 35
+#define EFI_LOAD_ERROR             (EFI_ERROR_BIT | 1)
+#define EFI_INVALID_PARAMETER      (EFI_ERROR_BIT | 2)
+#define EFI_UNSUPPORTED            (EFI_ERROR_BIT | 3)
+#define EFI_BAD_BUFFER_SIZE        (EFI_ERROR_BIT | 4)
+#define EFI_BUFFER_TOO_SMALL       (EFI_ERROR_BIT | 5)
+#define EFI_NOT_READY              (EFI_ERROR_BIT | 6)
+#define EFI_DEVICE_ERROR           (EFI_ERROR_BIT | 7)
+#define EFI_WRITE_PROTECTED        (EFI_ERROR_BIT | 8)
+#define EFI_OUT_OF_RESOURCES       (EFI_ERROR_BIT | 9)
+#define EFI_VOLUME_CORRUPTED       (EFI_ERROR_BIT | 10)
+#define EFI_VOLUME_FULL            (EFI_ERROR_BIT | 11)
+#define EFI_NO_MEDIA               (EFI_ERROR_BIT | 12)
+#define EFI_MEDIA_CHANGED          (EFI_ERROR_BIT | 13)
+#define EFI_NOT_FOUND              (EFI_ERROR_BIT | 14)
+#define EFI_ACCESS_DENIED          (EFI_ERROR_BIT | 15)
+#define EFI_NO_RESPONSE            (EFI_ERROR_BIT | 16)
+#define EFI_NO_MAPPING             (EFI_ERROR_BIT | 17)
+#define EFI_TIMEOUT                (EFI_ERROR_BIT | 18)
+#define EFI_NOT_STARTED            (EFI_ERROR_BIT | 19)
+#define EFI_ALREADY_STARTED        (EFI_ERROR_BIT | 20)
+#define EFI_ABORTED                (EFI_ERROR_BIT | 21)
+#define EFI_ICMP_ERROR             (EFI_ERROR_BIT | 22)
+#define EFI_TFTP_ERROR             (EFI_ERROR_BIT | 23)
+#define EFI_PROTOCOL_ERROR         (EFI_ERROR_BIT | 24)
+#define EFI_INCOMPATIBLE_VERSION   (EFI_ERROR_BIT | 25)
+#define EFI_SECURITY_VIOLATION     (EFI_ERROR_BIT | 26)
+#define EFI_CRC_ERROR              (EFI_ERROR_BIT | 27)
+#define EFI_END_OF_MEDIA           (EFI_ERROR_BIT | 28)
+#define EFI_END_OF_FILE            (EFI_ERROR_BIT | 31)
+#define EFI_INVALID_LANGUAGE       (EFI_ERROR_BIT | 32)
+#define EFI_COMPROMISED_DATA       (EFI_ERROR_BIT | 33)
+#define EFI_IP_ADDRESS_CONFLICT    (EFI_ERROR_BIT | 34)
+#define EFI_HTTP_ERROR             (EFI_ERROR_BIT | 35)
 
 
 // ------------------ EFI GUID ------------------
@@ -330,6 +331,22 @@ EFI_STATUS
    OUT UINTN            *Index
 );
 
+typedef
+EFI_STATUS 
+(EFIAPI *EFI_COPY_MEM)(
+    VOID *Destination,
+    CONST VOID *Source,
+    UINTN Length
+);
+
+typedef
+VOID
+(EFIAPI *EFI_SET_MEM) (
+   IN VOID                             *Buffer,
+   IN UINTN                            Size,
+   IN UINT8                            Value
+);
+
 struct _EFI_BOOT_SERVICES {
     EFI_TABLE_HEADER Hdr;
 
@@ -386,8 +403,8 @@ struct _EFI_BOOT_SERVICES {
     void* UninstallMultipleProtocolInterfaces;
 
     void* CalculateCrc32;
-    void* CopyMem;
-    void* SetMem;
+    EFI_COPY_MEM CopyMem;
+    EFI_SET_MEM SetMem;
     void* CreateEventEx;
 };
 
@@ -655,9 +672,15 @@ typedef struct _EFI_SIMPLE_FILE_SYSTEM_PROTOCOL {
 } EFI_SIMPLE_FILE_SYSTEM_PROTOCOL;
 
 #define EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID \
- {0x0964E5B2, 0x6459, 0x11D2, {0x8E,0x39,0x00,0xA0,0xC9,0x69,0x72,0x3B}}
-#define EFI_FILE_INFO_ID \
+ {0x964E5B22, 0x6459, 0x11D2, {0x8E,0x39,0x00,0xA0,0xC9,0x69,0x72,0x3B}}
+/*
+ #define EFI_FILE_INFO_ID \
  {0x09576e92,0x6d3f,0x11d2, {0x8e39,0x00,0xa0,0xc9,0x69,0x72,0x3b}}
+*/
+
+#define EFI_FILE_INFO_ID \
+ {0x09576e92,0x6d3f,0x11d2, \
+ {0x8e,0x39,0x00,0xa0,0xc9,0x69,0x72,0x3b}}
 
 // ------------------ IMAGE LOAD --------------------------
 
@@ -705,6 +728,7 @@ typedef struct {
         {0x8e,0x39,0x00,0xa0,0xc9,0x69,0x72,0x3b}}
 
 // ------------------ RAM -------------------
+
 typedef struct {
   UINT32                       Version ;
   UINT32                       NumberOfEntries ;

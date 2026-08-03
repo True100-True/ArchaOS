@@ -3,6 +3,89 @@
 #include <cpuid.h>
 #endif
 
+#include "elf.h"
+#include "../logo.h"
+#include "../kernel/fromboot.h" // Contains after boot info for kernel
+
+typedef void (*KernelEntry)(BootInfo*);
+//typedef void (*KernelHeader)(BootInfo*);
+
+
+#pragma pack(push, 1)
+typedef struct {
+    uint16_t type;
+    uint32_t size;
+    uint16_t reserved1;
+    uint16_t reserved2;
+    uint32_t offset;
+} BMPHeader;
+
+typedef struct {
+    uint32_t size;
+    int32_t width;
+    int32_t height;
+    uint16_t planes;
+    uint16_t bpp;
+    uint32_t compression;
+    uint32_t imageSize;
+    int32_t xppm;
+    int32_t yppm;
+    uint32_t colorsUsed;
+    uint32_t colorsImportant;
+} BMPInfoHeader;
+#pragma pack(pop)
+/*
+VOID *CopyMem(
+    VOID *Destination,
+    CONST VOID *Source,
+    UINTN Length
+)
+{
+    UINT8 *dst = (UINT8 *)Destination;
+    CONST UINT8 *src = (CONST UINT8 *)Source;
+
+    for (UINTN i = 0; i < Length; i++)
+    {
+        dst[i] = src[i];
+    }
+
+    return Destination;
+}
+*/
+
+void DrawBMP(UINT32 *fb, UINTN pitch, UINTN posX, UINTN posY, unsigned char *bmp, UINTN scale) {
+    BMPHeader *header = (BMPHeader *)bmp;
+    BMPInfoHeader *info = (BMPInfoHeader *)(bmp + sizeof(BMPHeader));
+    if (header->type != 0x4D42)
+        return;
+
+    if (info->bpp != 24)
+        return;
+
+    unsigned char *pixels = bmp + header->offset;
+
+    UINTN width = info->width;
+    UINTN height = info->height;
+    UINTN rowSize = (width * 3 + 3) & ~3;
+
+    for (UINTN y = 0; y < height; y++) {
+        for (UINTN x = 0; x < width; x++) {
+            unsigned char *pixel =
+                pixels + (height - 1 - y) * rowSize + x * 3;
+            UINT32 color =
+                ((UINT32)pixel[2] << 16) |
+                ((UINT32)pixel[1] << 8)  |
+                ((UINT32)pixel[0]);
+
+            for (UINTN sy = 0; sy < scale; sy++) {
+                for (UINTN sx = 0; sx < scale; sx++) {
+                    fb[(posY + y * scale + sy) * pitch + (posX + x * scale + sx)] = color;
+                }
+            }
+        }
+    }
+}
+
 void uefi_print(EFI_SYSTEM_TABLE *st, const CHAR16 *str);
 void uefi_println(EFI_SYSTEM_TABLE *st, const CHAR16 *str);
 void uefi_status_print(EFI_SYSTEM_TABLE *st, EFI_STATUS stat);
@@ -34,9 +117,9 @@ typedef struct {
 } cpu_vendor_identifiers;
 
 static const cpu_vendor_identifiers isCPUVMArray[] = { 
-    // Its kinda simple but easly bypassed with hardware spoofing, but its mainly for gpu detections
+    // Its kinda simple but easly bypassed with hardware spoofing, but its mainly for cpu detections
     { L"AuthenticAMD", 0 },
-    { L"AMDisbetter!", 0 }, // Early engineering samples of AMD K5 processor
+    { L"AMDisbetter!", 0 }, // Early engineering samples of AMD K5 processor (probably doesnt support uefi)
     { L"GenuineIntel", 0 },
     { L"VIAVIAVIA", 0 },
     { L"GenuineTMx86", 0 },
@@ -170,7 +253,7 @@ efi_stat_char16_struct const efi_status_char16[] = {
 };
 
 void uefi_status_println(EFI_SYSTEM_TABLE *st, EFI_STATUS stat) {
-    EFI_STATUS code = stat & ~EFI_ERROR_BIT;
+    EFI_STATUS code = stat;
     UINTN count = sizeof(efi_status_char16) / sizeof(efi_status_char16[0]);
     for (UINTN i = 0; i < count; i++) {
         EFI_STATUS value = efi_status_char16[i].value; // Because it is pointer, now its value!
@@ -188,7 +271,7 @@ void uefi_status_println(EFI_SYSTEM_TABLE *st, EFI_STATUS stat) {
 }
 
 void uefi_status_print(EFI_SYSTEM_TABLE *st, EFI_STATUS stat) {
-    EFI_STATUS code = stat & ~EFI_ERROR_BIT;
+    EFI_STATUS code = stat;
     UINTN count = sizeof(efi_status_char16) / sizeof(efi_status_char16[0]);
     for (UINTN i = 0; i < count; i++) {
         EFI_STATUS value = efi_status_char16[i].value; // Because it is pointer, now its value!
@@ -201,6 +284,28 @@ void uefi_status_print(EFI_SYSTEM_TABLE *st, EFI_STATUS stat) {
     CHAR16 buf[32];
     decimalConvert(code, buf, 32);
     st->ConOut->OutputString(st->ConOut, buf);
+}
+
+void uefi_print_hex(EFI_SYSTEM_TABLE *st, UINT64 value)
+{
+    const CHAR16 hex_chars[] = {
+        '0','1','2','3','4','5','6','7',
+        '8','9','A','B','C','D','E','F',
+        0
+    };
+
+    CHAR16 buffer[19];
+
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    buffer[18] = 0;
+
+    for (int i = 17; i >= 2; i--) {
+        buffer[i] = hex_chars[value & 0xF];
+        value >>= 4;
+    }
+
+    uefi_println(st, buffer);
 }
 
 typedef struct {
@@ -381,7 +486,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     CHAR16 buf_count[25];
     decimalConvert(Count, buf_count, 25);
 
-    uefi_print(SystemTable, L"Detected devices (PCI / PCIe): ");
+    uefi_print(SystemTable, L"Detected devices (PCI/e): ");
     SystemTable->ConOut->OutputString(SystemTable->ConOut, buf_count);
     SystemTable->ConOut->OutputString(SystemTable->ConOut, L"\r\n");
 
@@ -464,7 +569,7 @@ gpu_pci_end:
     decimalConvert(GopCount, buf, 8);
     SystemTable->ConOut->OutputString(SystemTable->ConOut, buf);
     uefi_println(SystemTable, L"");
-    uefi_println(SystemTable, L"[+] Identifing for GPU's...");
+    uefi_println(SystemTable, L"[+] Identifing GPU's...");
 
     for (UINTN i = 0; i < GopCount; i++) {
         EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
@@ -508,6 +613,7 @@ gpu_gop_end:
     uefi_println(SystemTable, L"--- RAM ---");
     uefi_println(SystemTable, L"In progress.\r\n");
 
+    /*
     uefi_println(SystemTable, L"--- KERNEL ---");
     uefi_println(SystemTable, L"[+] Loading main kernel...");
 
@@ -540,7 +646,7 @@ gpu_gop_end:
         uefi_println(SystemTable, L"[!] Failed to read kernel.");
         goto panic;
     }
-    fileProt = root;
+    fileProt = kernelFile;
     EFI_GUID gEfiFileInfoGuid = EFI_FILE_INFO_ID;
     UINTN Size = 0;
     UINTN bufferSize = 0;
@@ -598,12 +704,19 @@ gpu_gop_end:
     }
 
     EFI_PHYSICAL_ADDRESS kernelAddr = 0x100000;
-    gBS->AllocatePages(
+    Status = gBS->AllocatePages(
         AllocateAddress,
         EfiLoaderData,
         EFI_SIZE_TO_PAGES(kernelSize),
         &kernelAddr
     );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Failed to allocate pages for kernel.");
+        goto panic;
+    }
+
+    CopyMem((void*)kernelAddr, kernelBuffer, kernelSize); // Copy kernel into memory
 
     UINTN MemoryMapSize = 0;
     EFI_MEMORY_DESCRIPTOR *MemoryMap = NULL;
@@ -611,16 +724,16 @@ gpu_gop_end:
     UINTN DescriptorSize;
     UINT32 DescriptorVersion;
 
-    /* First call: get required size */
-    gBS->GetMemoryMap(
+    /* First call: get required size *//*
+    Status = gBS->GetMemoryMap(
         &MemoryMapSize,
-        MemoryMap,
+        NULL,
         &MapKey,
         &DescriptorSize,
         &DescriptorVersion
     );
 
-    /* Allocate buffer (+ some slack) */
+    /* Allocate buffer (+ some slack) *//*
     MemoryMapSize += 2 * DescriptorSize;
     gBS->AllocatePool(
         EfiLoaderData,
@@ -628,7 +741,7 @@ gpu_gop_end:
         (void**)&MemoryMap
     );
 
-    /* Second call: get actual map */
+    /* Second call: get actual map *//*
     Status = gBS->GetMemoryMap(
         &MemoryMapSize,
         MemoryMap,
@@ -636,6 +749,242 @@ gpu_gop_end:
         &DescriptorSize,
         &DescriptorVersion
     );
+
+    */
+
+    uefi_println(SystemTable, L"--- KERNEL ---");
+    uefi_println(SystemTable, L"[+] Loading main kernel...");
+
+    // goto kernel_end_end; // DISABLED, kernel always crashes
+
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs;
+    EFI_FILE_PROTOCOL *root;
+    EFI_FILE_PROTOCOL *kernelFile;
+    EFI_FILE_INFO *fileInfo = NULL;
+    EFI_GUID fsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
+    EFI_FILE_PROTOCOL *fileProt;
+
+    EFI_LOADED_IMAGE_PROTOCOL *LoadedImage;
+
+    EFI_GUID LoadedImageGuid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
+
+    Status = gBS->HandleProtocol(
+        ImageHandle,
+        &LoadedImageGuid,
+        (VOID**)&LoadedImage
+    );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Failed to get loaded image");
+        goto panic;
+    }
+
+    
+    Status = gBS->HandleProtocol(
+        LoadedImage->DeviceHandle,
+        &fsGuid,
+        (VOID**)&fs
+    );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] No filesystem on device");
+        goto panic;
+    }
+    
+    /*
+
+    EFI_HANDLE *handles;
+    UINTN count;
+
+    Status = gBS->LocateHandleBuffer(
+        ByProtocol,
+        &fsGuid,
+        NULL,
+        &count,
+        &handles
+    );
+
+    if (EFI_ERROR(Status))
+    {
+        uefi_println(SystemTable, L"[F] No filesystem handles");
+    }
+    else
+    {
+        uefi_println(SystemTable, L"[+] Filesystem exists!");
+    }
+    */
+
+    Status = fs->OpenVolume(
+        fs,
+        &root
+    );
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] OpenVolume failed");
+        goto panic;
+    }
+
+    Status = root->Open(
+        root,
+        &kernelFile,
+        L"kernel.elf",
+        EFI_FILE_MODE_READ,
+        0
+    );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] kernel.bin not found");
+        goto panic;
+    }
+
+    
+    EFI_GUID FileInfoGuid = EFI_FILE_INFO_ID;
+    UINTN fileInfoSize = 0;
+    Status = kernelFile->GetInfo(
+        kernelFile,
+        &FileInfoGuid,
+        &fileInfoSize,
+        NULL
+    );
+
+    if (Status != EFI_BUFFER_TOO_SMALL) {
+        uefi_println(SystemTable, L"[!] GetInfo size failed");
+        uefi_status_print(SystemTable, Status); // Does print EFI_BUFFER_TOO_SMALL???
+        goto panic;
+    }
+
+    Status = gBS->AllocatePool(
+        EfiLoaderData,
+        fileInfoSize,
+        (VOID**)&fileInfo
+    );
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] FileInfo allocation failed");
+        goto panic;
+    }
+
+    Status = kernelFile->GetInfo(
+        kernelFile,
+        &FileInfoGuid,
+        &fileInfoSize,
+        fileInfo
+    );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] GetInfo failed");
+        goto panic;
+    }
+
+
+    UINTN kernelSize = fileInfo->FileSize;
+    uefi_println(SystemTable, L"[+] Kernel size found");
+    VOID *kernelBuffer = NULL;
+
+    Status = gBS->AllocatePool(
+        EfiLoaderData,
+        kernelSize,
+        &kernelBuffer
+    );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Kernel buffer failed");
+        goto panic;
+    }
+    UINTN readSize = kernelSize;
+
+    Status = kernelFile->Read(
+        kernelFile,
+        &readSize,
+        kernelBuffer
+    );
+
+    if (EFI_ERROR(Status) || readSize != kernelSize)
+    {
+        uefi_println(SystemTable, L"[!] Kernel read failed");
+        goto panic;
+    }
+
+    
+    uefi_println(SystemTable, L"[+] Kernel loaded into buffer");
+    EFI_PHYSICAL_ADDRESS kernelAddr = 0x100000;
+    Status = gBS->AllocatePages(
+        AllocateAnyPages,
+        EfiLoaderData,
+        EFI_SIZE_TO_PAGES(kernelSize),
+        &kernelAddr
+    );
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Kernel pages failed");
+        goto panic;
+    }
+    gBS->CopyMem(
+        (VOID*)kernelAddr,
+        kernelBuffer,
+        kernelSize
+    );
+    uefi_println(SystemTable, L"[+] Kernel copied");
+
+    uefi_print(SystemTable, L"kernelAddr = ");
+    uefi_print_hex(SystemTable, kernelAddr);
+
+    uefi_print(SystemTable, L"kernelSize = ");
+    uefi_print_hex(SystemTable, kernelSize);
+
+    uefi_print(SystemTable, L"First 8 bytes = ");
+    uefi_print_hex(SystemTable, *(UINT64 *)kernelAddr);
+
+    Elf64_Ehdr *hdr = get_elf_header(kernelAddr);
+    Elf64_Phdr *phdr = get_program_headers(kernelAddr);
+
+    if (hdr->e_ident[0] == 0x7F &&
+        hdr->e_ident[1] == 'E' &&
+        hdr->e_ident[2] == 'L' &&
+        hdr->e_ident[3] == 'F') {
+        uefi_println(SystemTable, L"[+] Parsing kernel.elf");
+    } else {
+        uefi_println(SystemTable, L"[-] kernel.elf is not ELF");
+        goto panic;
+    }
+
+    for (UINT16 i = 0; i < hdr->e_phnum; i++)
+    {
+        Elf64_Phdr *p = &phdr[i];
+
+        if (p->p_type == 1) // PT_LOAD
+        {
+            EFI_PHYSICAL_ADDRESS segmentAddr = p->p_vaddr;
+
+            Status = gBS->AllocatePages(
+                AllocateAddress,
+                EfiLoaderData,
+                EFI_SIZE_TO_PAGES(p->p_memsz),
+                &segmentAddr
+            );
+
+            if (EFI_ERROR(Status)) {
+                uefi_println(SystemTable, L"[-] Segment allocation failed");
+                goto panic;
+            }
+
+            gBS->CopyMem(
+                (VOID *)p->p_vaddr,
+                (UINT8 *)kernelAddr + p->p_offset,
+                p->p_filesz
+            );
+
+            // Clear .bss
+            if (p->p_memsz > p->p_filesz)
+            {
+                gBS->SetMem(
+                    (VOID *)(p->p_vaddr + p->p_filesz),
+                    p->p_memsz - p->p_filesz,
+                    0
+                );
+            }
+        }
+    }
+
+    //goto end;
+    
 
 kernel_load_end:
     uefi_println(SystemTable, L" --- GPU GOP --- ");
@@ -710,7 +1059,7 @@ kernel_load_end:
     float PixelClockHz = PixelClock * 10000;
     float RefreshHz = PixelClockHz / (HTotal * VTotal);
 
-    int printGOP = 0; // Later it would be cool to read a config and print based of it
+    int printGOP = 1; // Later it would be cool to read a config and print based of it
     UINTN SizeOfInfo;
     EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info;
     UINT32 choosenMode = 0;
@@ -724,7 +1073,9 @@ gop_pick:
             &Info
         );
         if (!EFI_ERROR(Status)) {
-            if (printGOP == 1) printGOPStats(SystemTable, *Info);
+            if (printGOP == 1) {
+                printGOPStats(SystemTable, *Info);
+            }
             if (pickhighestFlag == 0) {            
                 if (Info->VerticalResolution == VActive && Info->HorizontalResolution == HActive) { // Simple
                     choosenMode = i;
@@ -741,7 +1092,7 @@ gop_pick:
     if (pickhighestFlag) {
         goto gop_end;
     }
-    // Only on real hardware this is possible
+    // Only on real hardware this is possible (my qemu doesnt allow me to do so)
     uefi_println(SystemTable, " --- Monitor ---");
     uefi_print(SystemTable, L"Refresh rate: ");
     CHAR16 RefreshRateBuf[64];
@@ -758,92 +1109,137 @@ gop_pick:
 
     // Now we gotta switch to GOP mode that was choosen
 gop_end:
-    uefi_println(SystemTable, L"[+] Press any key to enter new GOP mode.");
-    EFI_INPUT_KEY k;
-    while (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &k) != EFI_SUCCESS)
-        ;
-    UINT32* fb1 = NULL;
-    UINT32* fb2 = NULL;
-
+    uefi_println(SystemTable, L"[+] Entering GOP mode..");
     Status = gop->SetMode(gop, choosenMode);
     if (EFI_ERROR(Status)) {
         uefi_println(SystemTable, "[!] Failed to set GOP mode.");
-        goto panic;
+        goto panic; // Later try to initialize other functions and let kernel do its own thing
     }
     SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
+    uefi_println(SystemTable, L"Press any key to enter kernel...");
+    EFI_INPUT_KEY k;
+    while (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &k) != EFI_SUCCESS)
+        ;
 
     
-    UINTN width = gop->Mode->Info->HorizontalResolution;
+    UINT32 *fb = (UINT32 *)gop->Mode->FrameBufferBase;
+    UINTN width  = gop->Mode->Info->HorizontalResolution;
     UINTN height = gop->Mode->Info->VerticalResolution;
-    UINTN pitch = gop->Mode->Info->PixelsPerScanLine;
-    
-    /*
+    UINTN pitch  = gop->Mode->Info->PixelsPerScanLine;
+
     for (UINTN y = 0; y < height; y++) {
         for (UINTN x = 0; x < width; x++) {
-            fb[y * pitch + x] = 0x000000FF; // Blue in BGRA/ARGB
+            fb[y * pitch + x] = 0x00102030; // dark background
         }
     }
-    */
-    // Initialize FB1 and FB2 and switch between them
-    // It will only be written into FB1 and a function will
-    // Switch content from FB1 to FB2; more lag but it is better and faster
-    // for reading and etc.
-    // this system may be slower in case of CPU-only rendering BUT is it 
-    // Way more better on GPU, but for now it is CPU only
-    // Ill code it here, and then Ill transform it into the kernel
-
-    Status = SystemTable->BootServices->AllocatePool(
-        EfiLoaderData,
-        width * height * sizeof(UINT32),
-        (void**)&fb1
+    
+    // Print some art for fun into the new buffer
+    
+    DrawBMP(
+        fb,
+        pitch,
+        (width - 50 * 4) / 2,
+        (height - 50 * 4) / 2,
+        logo_bmp,
+        4
     );
-
-    for (UINTN y = 0; y < height; y++) {
-        for (UINTN x = 0; x < width; x++) {
-            fb1[y * pitch + x] = 0x000000FF;
-        }
-    }
-
-    // transform to fb2, not safe, not mem safe, just ahh
-    fb2 = fb1;
-    // Yea 
-
-    // Ill like to make an Event-like thing that will
-    // that will trigger event when the fb1 is drawn then async with that 
-
-    // Print the lines and show components funcitonality
-    // components -> GPU, GOP, CPU, Monitor
-    // No only the stats
-    /*
-    int padding = 55;
-    for (UINTN x = 0; x < HActive; x++) {
-        for (UINTN y = 0; x < VActive; y++) {
-            
-        }
-    }
-    */
-    
 
     // Here we need to allocate buffers and pass them to the kernel (if the kernel loaded)
     // which indeed didn't so we gotta just skip to ass
-    goto panic; // Because of disabled kernel loading
+    //goto panic; // Because of disabled kernel loading
 
-    fileProt->Read(fileProt, &kernelSize, (void*)kernelAddr);
-    typedef void (*KernelEntry)(void);
-    KernelEntry entry = (KernelEntry)kernelBuffer;
-    Status = gBS->ExitBootServices(ImageHandle, MapKey);
+    BootInfo bootInfo;
+
+    UINTN MemoryMapSize = 0;
+    EFI_MEMORY_DESCRIPTOR *MemoryMap = NULL;
+
+    UINTN MapKey;
+    UINTN DescriptorSize;
+    UINT32 DescriptorVersion;
+
+    Status = gBS->GetMemoryMap(
+        &MemoryMapSize,
+        NULL,
+        &MapKey,
+        &DescriptorSize,
+        &DescriptorVersion
+    );
+
+    MemoryMapSize += DescriptorSize * 8;
+    Status = gBS->AllocatePool(
+        EfiLoaderData,
+        MemoryMapSize,
+        (VOID**)&MemoryMap
+    );
+
     if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] ExitBootServices failed");
+        uefi_println(SystemTable, L"[!] Memory map alloc failed");
         goto panic;
     }
 
-    entry();
+    Status = gBS->GetMemoryMap(
+        &MemoryMapSize,
+        MemoryMap,
+        &MapKey,
+        &DescriptorSize,
+        &DescriptorVersion
+    );
 
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Memory map failed");
+        goto panic;
+    }
+
+    bootInfo.magic = BOOTINFOMAGIC;
+
+    bootInfo.framebuffer_base =
+        gop->Mode->FrameBufferBase;
+
+    bootInfo.framebuffer_size =
+        gop->Mode->FrameBufferSize;
+
+    bootInfo.width =
+        gop->Mode->Info->HorizontalResolution;
+
+    bootInfo.height =
+        gop->Mode->Info->VerticalResolution;
+
+    bootInfo.pixels_per_scanline =
+        gop->Mode->Info->PixelsPerScanLine;
+
+    bootInfo.kernel_address = kernelAddr;
+    bootInfo.kernel_size = kernelSize;
+
+    bootInfo.memory_map = (uint64_t)MemoryMap;
+    bootInfo.memory_map_size = MemoryMapSize;
+    bootInfo.memory_descriptor_size = DescriptorSize;
+
+    //goto end;
+
+    Status = gBS->ExitBootServices(ImageHandle, MapKey);
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] ExitBootServices failed");
+        uefi_status_println(SystemTable, Status);
+        goto panic;
+    }
+
+    //uefi_print_hex(SystemTable, kernelAddr); // Causes the error I think aswell
+    
+    //KernelEntry entry = (KernelEntry)(kernelAddr + 0x42);
+    //entry(&bootInfo);
+
+    KernelEntry entry = (KernelEntry)hdr->e_entry;
+    entry(&bootInfo);
+    
+    while(1)
+        asm volatile("hlt");
 panic:
-    uefi_println(SystemTable, L"(panic) Press any key to shutdown.");
-
+    uefi_println(SystemTable, L"(panic) Boot process failed, halting...");
+end:
+    uefi_println(SystemTable, L"Stopped. Press any key to shutdown.");
     EFI_INPUT_KEY key;
     while (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &key) != EFI_SUCCESS);
     SystemTable->RuntimeServices->ResetSystem(EfiResetShutdown, EFI_SUCCESS, 0, NULL);
     return EFI_SUCCESS;
+
 }

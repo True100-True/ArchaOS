@@ -1,0 +1,14 @@
+This is the bootloader
+It is UEFI, NOT Legacy BIOS compatible
+
+efi.h - header for uefi return flags, services, protocols, etc.
+    I mainly used AI to write headers and I checked if it is okay
+    using the official documentation at https://uefi.org/
+    Not all featurs are supported I am trying to make it simple
+    before supporting C/Cpp. It's content is flaged by comments for what is what used.
+    (example --- boot services --- flags headers and services needed for boot services)
+uefi.c - Main boot file, the first thing that reaches the uefi, there are 2 versions
+        1. uefi.c - a remake of uefi.c.old
+        2. uefi.c.old is what I have described earlier, mainly collects information
+           loads kernel and passes information to it using kernelentry kernelbuffers
+           initializes GOP and passes the handler to kernel.
