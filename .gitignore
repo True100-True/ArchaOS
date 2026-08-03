@@ -8,4 +8,4 @@
 *.EFI
 .tags
 
-kernel/toolchain/
+kernel/toolchain/*
