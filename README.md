@@ -108,6 +108,7 @@ process requires sudo permission to create .img that is bootable.
 ### Software Requirements
 For testing:
 * qemu-system-x86_64
+  
 Build / compile:
 * build-essential 
 * bison flex 
@@ -120,8 +121,8 @@ Build / compile:
 
 ### Minimum Requirements
 
-**CPU:** Any 64-bit
-**RAM:** >512MB DDR1
-**GPU:** Any supporting UEFI GOP
-**STORAGE:** 16GB HDD
-**UEFI:** >v2.1
+* **CPU:** Any 64-bit
+* **RAM:** >512MB DDR1
+* **GPU:** Any supporting UEFI GOP
+* **STORAGE:** 16GB HDD
+* **UEFI:** >v2.1
