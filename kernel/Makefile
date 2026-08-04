@@ -1,35 +1,38 @@
-#TARGET = kernel.bin
+CC=x86_64-elf-gcc
+LD=x86_64-elf-ld
 
-SRC = simple.c
-OBJ = simple.o
-ELF = kernel.elf
-LNK = linker.ld
+CFLAGS= \
+	-O2 \
+	-ffreestanding \
+	-mno-red-zone \
+	-mno-sse \
+	-mno-sse2 \
+	-Wall \
+	-Wextra
 
-LD = x86_64-elf-ld
-CC = x86_64-elf-gcc
+LDFLAGS=-T linker.ld
 
-#$(TARGET): $(ELF)
-#	x86_64-elf-objcopy \
-#		-O binary \
-#		$(ELF) \
-#		$(TARGET)
+SRC_C := $(shell find . -name "*.c")
+SRC_S := $(shell find . -name "*.s")
+
+OBJ := $(SRC_C:.c=.o) $(SRC_S:.s=.o)
+
+ELF=kernel.elf
+
 
 $(ELF): $(OBJ)
-	$(LD) \
-		-T $(LNK) \
-		$(OBJ) \
-		-o $(ELF)
+	$(LD) $(LDFLAGS) $(OBJ) -o $@
 
-$(OBJ): $(SRC)
-	$(CC) \
-		-ffreestanding \
-		-mno-red-zone \
-		-mno-sse \
-		-mno-sse2 \
-		-c $(SRC) \
-		-o $(OBJ)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+
+%.o: %.s
+	$(CC) -c $< -o $@
+
 
 clean:
-	rm -f $(OBJ) $(ELF) $(TARGET)
+	rm -f $(OBJ) $(ELF)
 
 .PHONY: clean

@@ -1,0 +1,3 @@
+This folder stores general code needed by kernel durning initialization or runtime
+Holds for example: GDT, IDT, outb, outw, etc.
+It is kcode CAN NOT contain any other type other then this

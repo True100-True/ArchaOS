@@ -4,12 +4,101 @@
 #endif
 
 #include "elf.h"
-#include "../logo.h"
-#include "../kernel/fromboot.h" // Contains after boot info for kernel
+#include "../common/logo.h"
+#include "../common/fromboot.h" // Contains after boot info for kernel
+#include "../common/fonts/cozette.h"
 
-typedef void (*KernelEntry)(BootInfo*);
+typedef int (*KernelEntry)(BootInfo*);
 //typedef void (*KernelHeader)(BootInfo*);
 
+// FOR DEBUG PURPUSES ONLY -- REMOVE LATER
+static inline void outb(uint16_t port, uint8_t value)
+{
+    asm volatile (
+        "outb %0, %1"
+        :
+        : "a"(value), "Nd"(port)
+    );
+}
+
+void serial_putchar(char c)
+{
+    outb(0x3F8, c);
+}
+
+void serial_print(const char* str) {
+    int i = 0;
+    while (str[i] != '\0') {
+        /*
+        switch (str[i]) {
+            case '\n':
+                serial_putchar('\r');
+                serial_putchar('\n');
+                break;
+            case '\t':
+                serial_putchar(' ');
+            default:
+                serial_putchar(str[i]);
+                break;
+        }
+        */
+        serial_putchar(str[i]);
+        i++;
+    }
+}
+
+void serial_print_hex(uint64_t value)
+{
+    const char hex_chars[] = "0123456789ABCDEF";
+
+    char buffer[19];
+
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    buffer[18] = '\0';
+
+    for (int i = 17; i >= 2; i--) {
+        buffer[i] = hex_chars[value & 0xF];
+        value >>= 4;
+    }
+
+    serial_print(buffer);
+    serial_putchar('\n');
+}
+
+// AI code -remove
+#define SCALE 20
+
+void draw_glyph(
+    uint8_t* glyph,
+    UINTN glyph_height,
+    UINTN pos_x,
+    UINTN pos_y,
+    UINTN pitch,
+    UINT32 *fb
+)
+{
+    for (UINTN y = 0; y < glyph_height; y++)
+    {
+        uint8_t row = glyph[y];
+
+        for (UINTN x = 0; x < 8; x++)
+        {
+            if (row & (0x80 >> x))
+            {
+                // scale each font pixel
+                for (UINTN sy = 0; sy < SCALE; sy++)
+                {
+                    for (UINTN sx = 0; sx < SCALE; sx++)
+                    {
+                        fb[(pos_y + y*SCALE + sy) * pitch +
+                           (pos_x + x*SCALE + sx)] = 0xFF0000;
+                    }
+                }
+            }
+        }
+    }
+}
 
 #pragma pack(push, 1)
 typedef struct {
@@ -949,40 +1038,45 @@ gpu_gop_end:
     {
         Elf64_Phdr *p = &phdr[i];
 
-        if (p->p_type == 1) // PT_LOAD
+        if (p->p_type != 0x00000001)
+            continue;
+
+        EFI_PHYSICAL_ADDRESS addr = p->p_paddr;
+
+        Status = gBS->AllocatePages(
+            AllocateAddress,
+            EfiLoaderData,
+            EFI_SIZE_TO_PAGES(p->p_memsz),
+            &addr
+        );
+
+        if (EFI_ERROR(Status))
+            goto panic;
+
+        gBS->CopyMem(
+            (VOID *)p->p_vaddr,
+            (UINT8 *)kernelAddr + p->p_offset,
+            p->p_filesz
+        );
+
+        if (p->p_memsz > p->p_filesz)
         {
-            EFI_PHYSICAL_ADDRESS segmentAddr = p->p_vaddr;
-
-            Status = gBS->AllocatePages(
-                AllocateAddress,
-                EfiLoaderData,
-                EFI_SIZE_TO_PAGES(p->p_memsz),
-                &segmentAddr
+            gBS->SetMem(
+                (VOID*)(addr + p->p_filesz),
+                p->p_memsz - p->p_filesz,
+                0
             );
-
-            if (EFI_ERROR(Status)) {
-                uefi_println(SystemTable, L"[-] Segment allocation failed");
-                goto panic;
-            }
-
-            gBS->CopyMem(
-                (VOID *)p->p_vaddr,
-                (UINT8 *)kernelAddr + p->p_offset,
-                p->p_filesz
-            );
-
-            // Clear .bss
-            if (p->p_memsz > p->p_filesz)
-            {
-                gBS->SetMem(
-                    (VOID *)(p->p_vaddr + p->p_filesz),
-                    p->p_memsz - p->p_filesz,
-                    0
-                );
-            }
         }
+
+        uefi_print_hex(SystemTable, p->p_vaddr);
+        uefi_print_hex(SystemTable, p->p_paddr);
+        uefi_print_hex(SystemTable, p->p_filesz);
+        uefi_print_hex(SystemTable, p->p_memsz);
+        uefi_println(SystemTable, L"");
     }
 
+    uefi_print(SystemTable, L"Entry = ");
+    uefi_print_hex(SystemTable, hdr->e_entry);
     //goto end;
     
 
@@ -1148,7 +1242,18 @@ gop_end:
     // which indeed didn't so we gotta just skip to ass
     //goto panic; // Because of disabled kernel loading
 
-    BootInfo bootInfo;
+    BootInfo *bootInfo;
+
+    Status = gBS->AllocatePool(
+        EfiLoaderData,
+        sizeof(BootInfo),
+        (VOID**)&bootInfo
+    );
+
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Failed to allocate pool for bootinfo...");
+        goto panic;
+    }
 
     UINTN MemoryMapSize = 0;
     EFI_MEMORY_DESCRIPTOR *MemoryMap = NULL;
@@ -1190,29 +1295,35 @@ gop_end:
         goto panic;
     }
 
-    bootInfo.magic = BOOTINFOMAGIC;
+    bootInfo->magic = BOOTINFOMAGIC;
 
-    bootInfo.framebuffer_base =
+    bootInfo->framebuffer_base =
         gop->Mode->FrameBufferBase;
 
-    bootInfo.framebuffer_size =
+    bootInfo->framebuffer_size =
         gop->Mode->FrameBufferSize;
 
-    bootInfo.width =
+    bootInfo->width =
         gop->Mode->Info->HorizontalResolution;
 
-    bootInfo.height =
+    bootInfo->height =
         gop->Mode->Info->VerticalResolution;
 
-    bootInfo.pixels_per_scanline =
+    bootInfo->pixels_per_scanline =
         gop->Mode->Info->PixelsPerScanLine;
 
-    bootInfo.kernel_address = kernelAddr;
-    bootInfo.kernel_size = kernelSize;
+    bootInfo->kernel_address = kernelAddr;
+    bootInfo->kernel_size = kernelSize;
 
-    bootInfo.memory_map = (uint64_t)MemoryMap;
-    bootInfo.memory_map_size = MemoryMapSize;
-    bootInfo.memory_descriptor_size = DescriptorSize;
+    bootInfo->memory_map = (uint64_t)MemoryMap;
+    bootInfo->memory_map_size = MemoryMapSize;
+    bootInfo->memory_descriptor_size = DescriptorSize;
+
+    serial_print("bootInfo ptr: ");
+    serial_print_hex((uint64_t)bootInfo);
+
+    serial_print("magic: ");
+    serial_print_hex(bootInfo->magic);
 
     //goto end;
 
@@ -1220,8 +1331,42 @@ gop_end:
     if (EFI_ERROR(Status)) {
         uefi_println(SystemTable, L"[!] ExitBootServices failed");
         uefi_status_println(SystemTable, Status);
-        goto panic;
+        int success = 0;
+        while (!success) {
+            MemoryMapSize = 0;
+
+            gBS->GetMemoryMap(
+                &MemoryMapSize,
+                NULL,
+                &MapKey,
+                &DescriptorSize,
+                &DescriptorVersion
+            );
+
+            // add some extra space
+            MemoryMapSize += DescriptorSize * 8;
+
+            gBS->AllocatePool(
+                EfiLoaderData,
+                MemoryMapSize,
+                (VOID**)&MemoryMap
+            );
+
+            Status = gBS->ExitBootServices(ImageHandle, MapKey);
+            if (!EFI_ERROR(Status)) {
+                success = 1;
+            }
+
+            if (MemoryMapSize > 1024*1024*1024)
+                goto panic;
+        }
     }
+
+    serial_print("BootInfo address: ");
+    serial_print_hex((uint64_t)&bootInfo);
+
+    serial_print("Magic: ");
+    serial_print_hex(bootInfo->magic);
 
     //uefi_print_hex(SystemTable, kernelAddr); // Causes the error I think aswell
     
@@ -1229,8 +1374,29 @@ gop_end:
     //entry(&bootInfo);
 
     KernelEntry entry = (KernelEntry)hdr->e_entry;
-    entry(&bootInfo);
+    entry(bootInfo);
+
+    for (UINTN y = 0; y < height; y++) {
+        for (UINTN x = 0; x < width; x++) {
+            fb[y * pitch + x] = 0x00404040;
+        }
+    }
+    serial_print("\n[BOOT] Returned to boot");
     
+    cozette_data font = load_glyphs();
+    uint8_t* chara = font.glyphs + ('K' * font.size);
+
+    // How can I write it into the middle of the screen 20x bigger?
+    int scale = 20;
+
+    int glyph_width = 8 * scale;
+    int glyph_height = font.size * scale;
+
+    int x = (width - glyph_width) / 2;
+    int y = (height - glyph_height) / 2;
+
+    draw_glyph(chara, font.size, x, y, pitch, fb);
+
     while(1)
         asm volatile("hlt");
 panic:

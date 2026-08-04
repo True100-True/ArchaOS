@@ -8,7 +8,7 @@ efi.h - header for uefi return flags, services, protocols, etc.
     before supporting C/Cpp. It's content is flaged by comments for what is what used.
     (example --- boot services --- flags headers and services needed for boot services)
 uefi.c - Main boot file, the first thing that reaches the uefi, there are 2 versions
-        1. uefi.c - a remake of uefi.c.old
-        2. uefi.c.old is what I have described earlier, mainly collects information
+        1. uefi.c.new - a remake of uefi.c (deciding about refactoring uefi.c)
+        2. uefi.c - is what I have described earlier, mainly collects information
            loads kernel and passes information to it using kernelentry kernelbuffers
            initializes GOP and passes the handler to kernel.
