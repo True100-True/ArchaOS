@@ -4,8 +4,7 @@
 // SOURCE: https://wiki.osdev.org/GDT_Tutorial
 
 // Used for creating GDT segment descriptors in 64-bit integer form.
- 
-#include <stdio.h>
+
 #include <stdint.h>
  
 // Each define here is for a specific flag in the descriptor.
@@ -34,11 +33,13 @@
 #define SEG_CODE_EXCA      0x0D // Execute-Only, conforming, accessed
 #define SEG_CODE_EXRDC     0x0E // Execute/Read, conforming
 #define SEG_CODE_EXRDCA    0x0F // Execute/Read, conforming, accessed
- 
+
+/*
 #define GDT_CODE_PL0 SEG_DESCTYPE(1) | SEG_PRES(1) | SEG_SAVL(0) | \
                      SEG_LONG(0)     | SEG_SIZE(1) | SEG_GRAN(1) | \
                      SEG_PRIV(0)     | SEG_CODE_EXRD
- 
+*/
+
 #define GDT_DATA_PL0 SEG_DESCTYPE(1) | SEG_PRES(1) | SEG_SAVL(0) | \
                      SEG_LONG(0)     | SEG_SIZE(1) | SEG_GRAN(1) | \
                      SEG_PRIV(0)     | SEG_DATA_RDWR
@@ -51,29 +52,27 @@
                      SEG_LONG(0)     | SEG_SIZE(1) | SEG_GRAN(1) | \
                      SEG_PRIV(3)     | SEG_DATA_RDWR
  
-void
-create_descriptor(uint32_t base, uint32_t limit, uint16_t flag)
-{
-    uint64_t descriptor;
- 
-    // Create the high 32 bit segment
-    descriptor  =  limit       & 0x000F0000;         // set limit bits 19:16
-    descriptor |= (flag <<  8) & 0x00F0FF00;         // set type, p, dpl, s, g, d/b, l and avl fields
-    descriptor |= (base >> 16) & 0x000000FF;         // set base bits 23:16
-    descriptor |=  base        & 0xFF000000;         // set base bits 31:24
- 
-    // Shift by 32 to allow for low part of segment
-    descriptor <<= 32;
- 
-    // Create the low 32 bit segment
-    descriptor |= base  << 16;                       // set base bits 15:0
-    descriptor |= limit  & 0x0000FFFF;               // set limit bits 15:0
- 
-    printf("0x%.16llX\n", descriptor);
-}
+#define GDT_CODE_PL0 \
+    SEG_DESCTYPE(1) | \
+    SEG_PRES(1) | \
+    SEG_LONG(1) | \
+    SEG_SIZE(0) | \
+    SEG_GRAN(1) | \
+    SEG_PRIV(0) | \
+    SEG_CODE_EXRD
 
+    /*
+struct gdt_entry {
+    uint64_t value;
+};
+
+struct gdt_entry gdt[5];
+*/
+
+uint64_t create_descriptor(uint32_t base, uint32_t limit, uint16_t flag);
 extern void setSegments();
 extern void setGdt();
-
+void init_gdt();
+void load_gdt(uint16_t limit, uint64_t base);
 
 #endif

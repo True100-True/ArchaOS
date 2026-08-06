@@ -1373,6 +1373,8 @@ gop_end:
     //KernelEntry entry = (KernelEntry)(kernelAddr + 0x42);
     //entry(&bootInfo);
 
+    serial_print("Booting into kernel...\n");
+
     KernelEntry entry = (KernelEntry)hdr->e_entry;
     entry(bootInfo);
 

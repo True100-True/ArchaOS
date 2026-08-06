@@ -2,13 +2,15 @@ CC=x86_64-elf-gcc
 LD=x86_64-elf-ld
 
 CFLAGS= \
-	-O2 \
-	-ffreestanding \
-	-mno-red-zone \
-	-mno-sse \
-	-mno-sse2 \
-	-Wall \
-	-Wextra
+    -O2 \
+    -ffreestanding \
+    -mno-red-zone \
+    -mno-sse \
+    -mno-sse2 \
+    -nostdlib \
+    -fno-omit-frame-pointer \
+    -Wall \
+    -Wextra
 
 LDFLAGS=-T linker.ld
 

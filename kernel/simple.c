@@ -13,56 +13,17 @@ KernelHeader header = {
 #include "../common/fromboot.h"
 #include "../common/fonts/cozette.h"
 
+#include "kcode/gdt.h"
+#include "kcode/idt.h"
+#include "kcode/io.h"
 
+#include "mem/pmm.h"
 
-
-void serial_putchar(char c)
-{
-    outb(0x3F8, c);
-}
-
-void serial_print(const char* str) {
-    int i = 0;
-    while (str[i] != '\0') {
-        serial_putchar(str[i]);
-        i++;
-    }
-}
-void serial_print_hex(uint64_t value)
-{
-    const char hex_chars[] = {
-        '0','1','2','3','4','5','6','7',
-        '8','9','A','B','C','D','E','F',
-        0
-    };
-
-    char buffer[19];
-
-    buffer[0] = '0';
-    buffer[1] = 'x';
-    buffer[18] = 0;
-
-    for (int i = 17; i >= 2; i--) {
-        buffer[i] = hex_chars[value & 0xF];
-        value >>= 4;
-    }
-
-    serial_print(buffer);
-    serial_putchar('\n');
-}
-
+#include "lib/stdio.h"
 
 void kernel_crash(void) {
     asm volatile("ud2");
     while (1)
-        asm volatile("hlt");
-}
-
-void kernel_panic(const char* reason) {
-    serial_print("(panic) kernel paniced: ");
-    serial_print(reason);
-    serial_print("\n\n");
-    while (1) 
         asm volatile("hlt");
 }
 
@@ -73,6 +34,8 @@ void kernel_main(BootInfo* boot) {
     serial_putchar('N');
     serial_putchar('L');
     */
+
+    serial_init();
     
     serial_print("Kernel booted...\n\n");
     serial_print("[+] Checking post-boot information\n");
@@ -91,6 +54,31 @@ void kernel_main(BootInfo* boot) {
     if (boot->width == 0 || boot->height == 0) {
         serial_print("\t[!] Sizes (of frame buffer) are missing...\n");
     }
+
+    /*
+    uint32_t* fb = (uint32_t*)boot->framebuffer_base;
+
+    for (uint64_t y = 0; y < boot->height; y++) {
+        for (uint64_t x = 0; x < boot->width; x++) {
+            fb[y * boot->pixels_per_scanline + x] = 0x000000;
+        }
+    }
+    */
+
+    serial_print("[+] Loading GDT..\n");
+    init_gdt();
+    serial_print("[~] GDT loaded...\n");
+
+    serial_print("[+] Loading IDT..\n");
+    init_idt();
+    serial_print("[~] IDT loaded...\n");
+
+    serial_print("[+] Loading PPM..\n");
+    init_pmm(boot->memory_map, boot->memory_map_size, boot->memory_descriptor_size);
+    serial_print("[~] Loaded PPM..\n");
+
+
+    
     
     while (1)
         asm volatile("hlt");
