@@ -9,7 +9,6 @@ void init_graphics(framebuffer_t *framebuffer) {
 }
 
 void put_pixel(uint32_t x, uint32_t y, uint32_t color) {
-    serial_print("Putting pixel...");
     if (framebuffer_pb == NULL)
         return;
 
