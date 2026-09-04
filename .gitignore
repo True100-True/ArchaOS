@@ -7,6 +7,6 @@
 *.img
 *.EFI
 *.tags
-
+*.tmp
 
 toolchain/

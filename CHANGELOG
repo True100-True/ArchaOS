@@ -1,0 +1,5 @@
+Sep 4. 2026
+- Started CHANGELOG system
+- starting to change OS to multi CPU compatibility
+- Serial print can be disabled using NOT_QEMU_TEST set to 1
+- moved putchar and framebuffer_t to graphics (graphics/graphics.h)

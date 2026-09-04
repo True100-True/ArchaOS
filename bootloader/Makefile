@@ -44,13 +44,26 @@ run: $(DISK)
 	qemu-system-x86_64 \
 		-machine q35 \
 		-m 512M \
-		-cpu qemu64,vendor="AuthenticAMD" \
+		-cpu qemu64 \
 		-bios /usr/share/ovmf/OVMF.fd \
 		-drive file=$(DISK),format=raw \
 		-net none \
 		-serial stdio \
 		-device virtio-gpu \
-		-display gtk
+		-display gtk 
+debug: $(DISK)
+		qemu-system-x86_64 \
+		-machine q35 \
+		-m 512M \
+		-cpu qemu64 \
+		-bios /usr/share/ovmf/OVMF.fd \
+		-drive file=$(DISK),format=raw \
+		-net none \
+		-serial stdio \
+		-device virtio-gpu \
+		-display gtk \
+		-gdb tcp::9000 \
+		-S
 
 # -device VGA,edid=off \
 

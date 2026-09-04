@@ -1,7 +1,7 @@
 #ifndef IO_H
 #define IO_H
 
-//#include <stdint.h>
+#include <stdint.h>
 
 // SOURCE: https://codebrowser.dev/glibc/glibc/sysdeps/unix/sysv/linux/x86/sys/io.h.html
 
@@ -119,4 +119,27 @@ outsl (unsigned short int __port, const void *__addr,
   __asm__ __volatile__ ("cld ; rep ; outsl":"=S" (__addr), "=c" (__count)
 			:"d" (__port), "0" (__addr), "1" (__count));
 }
+
+// Mine
+
+static inline uint64_t read_cr3(void) {
+    uint64_t value;
+
+    __asm__ volatile (
+        "mov %%cr3, %0"
+        : "=r"(value)
+    );
+
+    return value;
+}
+
+static inline void write_cr3(uint64_t value) {
+    __asm__ volatile (
+        "mov %0, %%cr3"
+        :
+        : "r"(value)
+        : "memory"
+    );
+}
+
 #endif

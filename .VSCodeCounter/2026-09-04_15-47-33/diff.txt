@@ -1,0 +1,67 @@
+Date : 2026-09-04 15:47:33
+Directory : /home/theblackdev/Documents/OS/anothertry/ArchaOS
+Total : 28 files,  -93 codes, 13 comments, -14 blanks, all -94 lines
+
+Languages
++----------+------------+------------+------------+------------+------------+
+| language | files      | code       | comment    | blank      | total      |
++----------+------------+------------+------------+------------+------------+
+| C++      |         13 |         53 |          2 |         20 |         75 |
+| Makefile |          2 |         15 |          0 |          1 |         16 |
+| C        |         13 |       -161 |         11 |        -35 |       -185 |
++----------+------------+------------+------------+------------+------------+
+
+Directories
++------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                         | files      | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                            |         28 |        -93 |         13 |        -14 |        -94 |
+| . (Files)                                                                    |          1 |          2 |          0 |          1 |          3 |
+| bootloader                                                                   |          2 |         15 |          0 |          1 |         16 |
+| common                                                                       |          1 |          2 |          0 |          2 |          4 |
+| kernel                                                                       |         24 |       -112 |         13 |        -18 |       -117 |
+| kernel (Files)                                                               |          2 |          4 |         -8 |          1 |         -3 |
+| kernel/arch                                                                  |          5 |        285 |         18 |         66 |        369 |
+| kernel/arch/x86_64                                                           |          5 |        285 |         18 |         66 |        369 |
+| kernel/errs                                                                  |          3 |          9 |          1 |          4 |         14 |
+| kernel/graphics                                                              |          2 |         34 |          0 |         10 |         44 |
+| kernel/kcode                                                                 |          6 |       -249 |        -16 |        -53 |       -318 |
+| kernel/lib                                                                   |          2 |          0 |         15 |         -3 |         12 |
+| kernel/mem                                                                   |          3 |       -204 |          3 |        -45 |       -246 |
+| kernel/temp                                                                  |          1 |          9 |          0 |          2 |         11 |
++------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| filename                                                                     | language | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/Makefile                   | Makefile |          2 |          0 |          1 |          3 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/Makefile        | Makefile |         13 |          0 |          0 |         13 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/uefi.c          | C        |          2 |          0 |          1 |          3 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/common/fromboot.h          | C++      |          2 |          0 |          2 |          4 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/arch/x86_64/gdt.c   | C        |         47 |          0 |         14 |         61 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/arch/x86_64/gdt.h   | C++      |         49 |         16 |         13 |         78 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/arch/x86_64/idt.c   | C        |         33 |          0 |         20 |         53 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/arch/x86_64/idt.h   | C++      |         22 |          0 |         10 |         32 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/arch/x86_64/io.h    | C++      |        134 |          2 |          9 |        145 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/config.h            | C++      |          1 |          1 |          0 |          2 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/errs/exception.c    | C        |          3 |          3 |          1 |          7 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/errs/kernel_panic.c | C        |          2 |         -2 |          1 |          1 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/errs/pnc.h          | C++      |          4 |          0 |          2 |          6 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/graphics/graphics.c | C        |         18 |          0 |          6 |         24 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/graphics/graphics.h | C++      |         16 |          0 |          4 |         20 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/gdt.c         | C        |        -47 |          0 |        -14 |        -61 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/gdt.h         | C++      |        -49 |        -16 |        -13 |        -78 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/idt.c         | C        |        -31 |          0 |        -20 |        -51 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/idt.h         | C++      |        -22 |          0 |        -10 |        -32 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/io.h          | C++      |       -131 |         -3 |         -9 |       -143 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/x86_64.h      | C++      |         31 |          3 |         13 |         47 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/stdio.c         | C        |         -2 |         16 |         -2 |         12 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/stdio.h         | C++      |          2 |         -1 |         -1 |          0 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/mem/pmm.c           | C        |         -1 |         26 |          7 |         32 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/mem/vmm.c           | C        |       -197 |        -23 |        -52 |       -272 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/mem/vmm.h           | C++      |         -6 |          0 |          0 |         -6 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/simple.c            | C        |          3 |         -9 |          1 |         -5 |
+| /home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/temp/command.c      | C        |          9 |          0 |          2 |         11 |
+| Total                                                                        |          |        -93 |         13 |        -14 |        -94 |
++------------------------------------------------------------------------------+----------+------------+------------+------------+------------+

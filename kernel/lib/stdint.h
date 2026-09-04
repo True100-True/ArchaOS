@@ -84,3 +84,5 @@ typedef uint64_t                uintmax_t;
 #include <stdint.h> // gcc is mad at me for making my own
 
 #endif
+
+#include <stdint.h>

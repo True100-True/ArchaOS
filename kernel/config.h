@@ -23,9 +23,11 @@ Cons
 If computer changes there may be some issues and you will need to recompile your kernel
 
 //// THIS IDEA REQUIRES DECISIONS ////
+- decided to keep it for Computer-to-Computer compatibility
 
 */
 
 #define x86_64 1
+#define QEMU_TEST 1 // WATCH OUT FOR THIS VALUE
 
 #endif

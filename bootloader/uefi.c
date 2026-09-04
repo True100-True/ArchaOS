@@ -1012,7 +1012,7 @@ gpu_gop_end:
     );
     uefi_println(SystemTable, L"[+] Kernel copied");
 
-    uefi_print(SystemTable, L"kernelAddr = ");
+    uefi_print(SystemTable, L"kernelPhysAddr = ");
     uefi_print_hex(SystemTable, kernelAddr);
 
     uefi_print(SystemTable, L"kernelSize = ");
@@ -1122,16 +1122,24 @@ kernel_load_end:
     EFI_GUID gEfiEdidDiscoveredProtocolGuid = EFI_EDID_DISCOVERED_PROTOCOL_GUID;
     EFI_EDID_DISCOVERED_PROTOCOL *Edid;
     int pickhighestFlag = 0;
+    int skip_monitor = 0;
     Status = gBS->LocateProtocol(
         &gEfiEdidDiscoveredProtocolGuid, 
         NULL, 
         (VOID **)&Edid
     );
 
+    int preferClassic = 1;
+
     // Parse the edid
     if (Edid->SizeOfEdid < 128 || Edid->Edid == NULL) { // Docs say that available edid is bigger then 128
-        uefi_println(SystemTable, L"[!] No available information about monitor, picking highest resolution.");
+        if (preferClassic != 1) {
+            uefi_println(SystemTable, L"[!] No available information about monitor, picking highest resolution.");
+        } else {
+            uefi_println(SystemTable, L"[!] No available information about monitor, prefering 1920x1080 resolution");
+        }
         pickhighestFlag = 1;
+        skip_monitor = 1;
         goto gop_pick;
     }
     
@@ -1159,31 +1167,57 @@ kernel_load_end:
     UINT32 choosenMode = 0;
 
 gop_pick:
-    for (UINTN i = 0; i < gop->Mode->MaxMode; i++) {
+    // Terrible, ugly -> Will do the job for now (later I will audit and rewrite this) 
+    if (preferClassic == 1) {
+        pickhighestFlag = 0;
+    }
+    uefi_println(SystemTable, L"Modes available: ");
+    for (UINTN i = 0; i < gop->Mode->MaxMode; i++)
+    {
+        Info = gop->Mode->Info;
         Status = gop->QueryMode(
             gop,
             i,
             &SizeOfInfo,
             &Info
         );
-        if (!EFI_ERROR(Status)) {
-            if (printGOP == 1) {
-                printGOPStats(SystemTable, *Info);
-            }
-            if (pickhighestFlag == 0) {            
-                if (Info->VerticalResolution == VActive && Info->HorizontalResolution == HActive) { // Simple
-                    choosenMode = i;
-                    break;
-                }
-            } else {
-                choosenMode = gop->Mode->MaxMode - 1;
-                break;
-            }
-        } else {
-            uefi_println(SystemTable, L"[F] Failed to print Info about GOP mode.");
+
+        uefi_print(SystemTable, L"\t");
+        CHAR16 buffff[256];
+        decimalConvert(Info->HorizontalResolution, buffff, sizeof(buffff));
+        uefi_print(SystemTable, buffff);
+        uefi_print(SystemTable, L"x");
+        decimalConvert(Info->VerticalResolution, buffff, sizeof(buffff));
+        uefi_println(SystemTable, buffff);
+
+        if (EFI_ERROR(Status))
+            continue;
+
+
+        if (printGOP)
+            printGOPStats(SystemTable, *Info);
+
+
+        // Exact requested resolution
+        if (Info->HorizontalResolution == HActive &&
+            Info->VerticalResolution == VActive)
+        {
+            choosenMode = i;
+            break;
+        }
+
+
+        // Prefer 1920x1080
+        if (preferClassic &&
+            Info->HorizontalResolution == 1920 &&
+            Info->VerticalResolution == 1080)
+        {
+            choosenMode = i;
+            break;
         }
     }
-    if (pickhighestFlag) {
+    uefi_println(SystemTable, L"Mode was choosen..");
+    if (skip_monitor) {
         goto gop_end;
     }
     // Only on real hardware this is possible (my qemu doesnt allow me to do so)
@@ -1203,6 +1237,18 @@ gop_pick:
 
     // Now we gotta switch to GOP mode that was choosen
 gop_end:
+    uefi_print(SystemTable, L"[+] Choose mode: ");
+    CHAR16 bufff[256];
+    decimalConvert(gop->Mode->Info->HorizontalResolution, bufff, sizeof(bufff));
+    uefi_print(SystemTable, bufff);
+    uefi_print(SystemTable, L"x");
+    decimalConvert(gop->Mode->Info->VerticalResolution, bufff, sizeof(bufff));
+    uefi_println(SystemTable, bufff);
+
+    uefi_println(SystemTable, L"Press any key to enter kernel...");
+    EFI_INPUT_KEY k;
+    while (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &k) != EFI_SUCCESS)
+        ;
     uefi_println(SystemTable, L"[+] Entering GOP mode..");
     Status = gop->SetMode(gop, choosenMode);
     if (EFI_ERROR(Status)) {
@@ -1210,17 +1256,15 @@ gop_end:
         goto panic; // Later try to initialize other functions and let kernel do its own thing
     }
     SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
-    uefi_println(SystemTable, L"Press any key to enter kernel...");
-    EFI_INPUT_KEY k;
-    while (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &k) != EFI_SUCCESS)
-        ;
-
     
     UINT32 *fb = (UINT32 *)gop->Mode->FrameBufferBase;
     UINTN width  = gop->Mode->Info->HorizontalResolution;
     UINTN height = gop->Mode->Info->VerticalResolution;
     UINTN pitch  = gop->Mode->Info->PixelsPerScanLine;
 
+    
+    // TODO: Put back original background
+    /*
     for (UINTN y = 0; y < height; y++) {
         for (UINTN x = 0; x < width; x++) {
             fb[y * pitch + x] = 0x00102030; // dark background
@@ -1237,6 +1281,15 @@ gop_end:
         logo_bmp,
         4
     );
+    */
+    
+    
+    for (UINTN y = 0; y < height; y++) {
+        for (UINTN x = 0; x < width; x++) {
+            fb[y * pitch + x] = 0x000000; // dark background
+        }
+    }
+    
 
     // Here we need to allocate buffers and pass them to the kernel (if the kernel loaded)
     // which indeed didn't so we gotta just skip to ass
@@ -1312,7 +1365,11 @@ gop_end:
     bootInfo->pixels_per_scanline =
         gop->Mode->Info->PixelsPerScanLine;
 
-    bootInfo->kernel_address = kernelAddr;
+    bootInfo->kernel_virtual_address = phdr->p_paddr;
+    bootInfo->kernel_physical_address = kernelAddr;
+    bootInfo->kernel_physical_address_start = kernelAddr;
+    bootInfo->kernel_physical_address_end = kernelAddr + kernelSize;
+    
     bootInfo->kernel_size = kernelSize;
 
     bootInfo->memory_map = (uint64_t)MemoryMap;
@@ -1384,6 +1441,7 @@ gop_end:
         }
     }
     serial_print("\n[BOOT] Returned to boot");
+    /*
     
     cozette_data font = load_glyphs();
     uint8_t* chara = font.glyphs + ('K' * font.size);
@@ -1398,6 +1456,7 @@ gop_end:
     int y = (height - glyph_height) / 2;
 
     draw_glyph(chara, font.size, x, y, pitch, fb);
+    */
 
     while(1)
         asm volatile("hlt");

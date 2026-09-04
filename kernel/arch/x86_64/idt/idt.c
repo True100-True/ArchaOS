@@ -37,6 +37,7 @@ extern void divide_handler();
 extern void invalid_opcode_handler();
 extern void general_protection_handler();
 extern void page_fault_handler();
+extern void double_fault_handler();
 
 extern void load_idt(uint16_t size, uint64_t base);
 
@@ -46,6 +47,7 @@ void init_idt()
     idt_set_gate(6, invalid_opcode_handler);
     idt_set_gate(13, general_protection_handler);
     idt_set_gate(14, page_fault_handler);
+    idt_set_gate(8, double_fault_handler);
 
     load_idt(sizeof(idt)-1, (uint64_t)&idt);
 }

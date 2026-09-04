@@ -2,6 +2,7 @@
 .global invalid_opcode_handler 
 .global general_protection_handler 
 .global page_fault_handler
+.global double_fault_handler
 
 .text
 
@@ -58,6 +59,21 @@ page_fault_handler:
     push %rdx
 
     call page_fault
+
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+
+    iretq
+
+double_fault_handler:
+    push %rax
+    push %rbx
+    push %rcx
+    push %rdx
+
+    call double_fault
 
     pop %rdx
     pop %rcx

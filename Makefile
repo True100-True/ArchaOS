@@ -11,6 +11,9 @@ bootloader: kernel
 run:
 	$(MAKE) -C bootloader run
 
+debug:
+	$(MAKE) -C bootloader debug
+
 clean:
 	$(MAKE) -C kernel clean
 	$(MAKE) -C bootloader clean

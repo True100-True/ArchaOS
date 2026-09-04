@@ -2,6 +2,9 @@
 #include "pnc.h"
 #include <stdint.h>
 /*
+
+for x86_64
+
 Division Error 	0 (0x0) 	Fault 	#DE 	No
 Debug 	1 (0x1) 	Fault/Trap 	#DB 	No
 Non-maskable Interrupt 	2 (0x2) 	Interrupt 	- 	No
@@ -30,8 +33,9 @@ VMM Communication Exception 	29 (0x1D) 	Fault 	#VC 	Yes
 Security Exception 	30 (0x1E) 	Fault 	#SX 	Yes
 Reserved 	31 (0x1F) 	- 	- 	No 
 */
-void divide_error()
-{
+
+#if !defined(X86_64) || X86_64 == 1
+void divide_error() {
     kernel_panic("DIVIDE BY ZERO");
 }
 
@@ -46,3 +50,16 @@ void general_protection() {
 void page_fault() {
     kernel_panic("PAGE FAULT");
 }
+
+void double_fault() {
+    kernel_panic("DOUBLE FAULT");
+}
+
+// #else
+
+// ADD exceptions here 
+// I do not neccesseraly want to move all of these to 
+// Do I fear that it will be a big file? No!
+
+#endif
+

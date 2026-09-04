@@ -1,0 +1,35 @@
+"filename", "language", "C", "C++", "Makefile", "JSON with Comments", "Markdown", "comment", "blank", "total"
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/ArchaOS.code-workspace", "JSON with Comments", 0, 0, 0, 8, 0, 0, 0, 8
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/Makefile", "Makefile", 0, 0, 12, 0, 0, 0, 5, 17
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/README.md", "Markdown", 0, 0, 0, 0, 94, 0, 35, 129
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/Makefile", "Makefile", 0, 0, 43, 0, 0, 1, 17, 61
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/efi.h", "C++", 0, 626, 0, 0, 0, 25, 104, 755
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/elf.h", "C++", 0, 38, 0, 0, 0, 0, 9, 47
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/uefi.c", "C", 985, 0, 0, 0, 0, 233, 198, 1416
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/common/fonts/cozette.h", "C++", 0, 53, 0, 0, 0, 0, 40, 93
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/common/fonts/cozette_fnt.h", "C++", 0, 732, 0, 0, 0, 0, 0, 732
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/common/fromboot.h", "C++", 0, 18, 0, 0, 0, 0, 8, 26
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/common/logo.h", "C++", 0, 648, 0, 0, 0, 0, 1, 649
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/Makefile", "Makefile", 0, 0, 26, 0, 0, 0, 14, 40
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/config.h", "C++", 0, 4, 0, 0, 0, 24, 4, 32
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/errs/exception.c", "C", 16, 0, 0, 0, 0, 29, 3, 48
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/errs/kernel_panic.c", "C", 8, 0, 0, 0, 0, 3, 4, 15
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/errs/pnc.h", "C++", 0, 4, 0, 0, 0, 0, 2, 6
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/graphics/graphics.h", "C++", 0, 0, 0, 0, 0, 0, 1, 1
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/gdt.c", "C", 47, 0, 0, 0, 0, 0, 14, 61
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/gdt.h", "C++", 0, 49, 0, 0, 0, 16, 13, 78
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/idt.c", "C", 31, 0, 0, 0, 0, 0, 20, 51
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/idt.h", "C++", 0, 22, 0, 0, 0, 0, 10, 32
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/kcode/io.h", "C++", 0, 117, 0, 0, 0, 2, 3, 122
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/stdbool.h", "C++", 0, 9, 0, 0, 0, 0, 5, 14
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/stdint.h", "C++", 0, 4, 0, 0, 0, 78, 4, 86
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/stdio.c", "C", 101, 0, 0, 0, 0, 1, 26, 128
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/stdio.h", "C++", 0, 15, 0, 0, 0, 1, 5, 21
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/string.c", "C", 69, 0, 0, 0, 0, 11, 24, 104
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/string.h", "C++", 0, 12, 0, 0, 0, 11, 4, 27
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/lib/uchar.h", "C++", 0, 12, 0, 0, 0, 0, 5, 17
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/mem/pmm.c", "C", 138, 0, 0, 0, 0, 10, 18, 166
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/mem/pmm.h", "C++", 0, 20, 0, 0, 0, 0, 6, 26
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/kernel/simple.c", "C", 75, 0, 0, 0, 0, 33, 27, 135
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/toolchain/gcc-15.2.0/libphobos/libdruntime/core/stdc/errno_.c", "C", 10, 0, 0, 0, 0, 10, 6, 26
+"Total", "-", 1480, 2383, 81, 8, 94, 488, 635, 5169

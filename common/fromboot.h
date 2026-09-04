@@ -19,7 +19,12 @@ typedef struct {
     uint64_t memory_map_size;
     uint64_t memory_descriptor_size;
 
-    uint64_t kernel_address;
+    uint64_t kernel_physical_address;
+    uint64_t kernel_physical_address_start;
+    uint64_t kernel_physical_address_end;
+
+    uint64_t kernel_virtual_address;
+    
     uint64_t kernel_size;
 } BootInfo;
 

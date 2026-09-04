@@ -1,3 +1,7 @@
+// This shit is PMM.c (physical memory manager)
+// DO NOT try to fuck this up or wont boot up properly
+// atleast to the point of PMM test so yeah
+
 #include "pmm.h"
 
 typedef struct memory_region {
@@ -33,13 +37,9 @@ typedef struct {
    uint64_t    Attribute;
 } EFI_MEMORY_DESCRIPTOR;
 
-#define PAGE_SIZE 0x1000
-#define MAX_REGIONS 6000
-#define SIZEOF_BITMAP (1024*1024)
-#define MAX_PAGES (SIZEOF_BITMAP * 8)
-
-memory_region regions[MAX_REGIONS];
-int region_count = 0;
+//#define MAX_REGIONS 6000
+//memory_region regions[MAX_REGIONS];
+//int region_count = 0;
 
 uint8_t bitmap[SIZEOF_BITMAP];
 bool bitmap_init = false;
@@ -81,9 +81,9 @@ void reserve_region(uint64_t base, uint64_t length) {
         mark_used(start + i);
     }
 }
-void* alloc_page(bool erase) {
+/*
+void* palloc_page(bool erase) {
     if (!bitmap_init) {
-        serial_print("[MEM] memory not initialized..\n");
         return NULL;
     }
 
@@ -104,12 +104,43 @@ void* alloc_page(bool erase) {
             }
         }
     }
-    serial_print("[MEM] out of memory\n");
     return NULL;
 }
+*/
+uint64_t palloc_page(void) {
+    if (!bitmap_init)
+        return 0;
 
-/*
-void reserve_region(uint64_t base, uint64_t length) {
+    for (uint64_t byte = 0;
+         byte < SIZEOF_BITMAP;
+         byte++) {
+        if (bitmap[byte] == 0xFF)
+            continue;
+
+        for (uint64_t bit = 0; bit < 8; bit++) {
+            uint8_t mask =
+                (uint8_t)(1U << bit);
+
+            if (!(bitmap[byte] & mask)) {
+                uint64_t page =
+                    byte * 8 + bit;
+
+                if (page >= MAX_PAGES)
+                    return 0;
+
+                mark_used(page);
+
+                return page * PAGE_SIZE;
+            }
+        }
+    }
+
+    mark_used(0);
+
+    return 0;
+}
+
+/* void reserve_region(uint64_t base, uint64_t length) {
     regions[region_count].base = base;
     regions[region_count].length = length;
     //regions[region_count].type = type;
@@ -118,10 +149,8 @@ void reserve_region(uint64_t base, uint64_t length) {
 }
 */
 
-void free_page(void* address) {
-    uint64_t page =
-        (uint64_t)address
-        / PAGE_SIZE;
+void pfree_page(uint64_t address) {
+    uint64_t page = address / PAGE_SIZE;
     mark_free(page);
 }
 
@@ -159,7 +188,4 @@ void init_pmm(uint64_t mem_map, uint64_t mem_map_size, uint64_t descriptor_size)
 
     mark_used(0);
     bitmap_init = true;
-    serial_print(
-        "[PMM] initialized\n"
-    );
 }

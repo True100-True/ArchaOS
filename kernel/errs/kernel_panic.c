@@ -1,15 +1,16 @@
-#include "../lib/stdio.h"
+#include "pnc.h"
+#include "../config.h"
 
+void panic_screen() {
 
+}
+
+// The panic function that uses the screen
 void kernel_panic(const char* msg) {
-    serial_print("(panic) Kernel panic because ring-0 threw exception...\n\t");
-    serial_print(msg);
-    /*
-    in future draw smth and try to recover as much as possible
-    */
+    
 
     asm volatile("cli");
-
-    while (1)
+    while (1) {
         asm volatile("hlt");
+    }
 }
