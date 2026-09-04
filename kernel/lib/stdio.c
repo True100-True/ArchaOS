@@ -1,4 +1,4 @@
-#include "../kcode/x86_64.h"
+#include "../kcode/arch.h"
 #include "string.h"
 #include "stdio.h"
 #include "stdbool.h"

@@ -17,8 +17,6 @@ KernelHeader header = {
 #include "errs/pnc.h"
 #include "lib/stdio.h"
 
-const char *kernel_version = "0.1.1"; 
-
 void kernel_main(BootInfo *boot) {
     /*
     serial_putchar('K');
@@ -27,11 +25,13 @@ void kernel_main(BootInfo *boot) {
     serial_putchar('L');
     */
 
+    const char *kernel_version = "0.1.1"; 
+
     serial_init();
 
     serial_print("\n\nKernel booted...\n\n");
     serial_print("Version");
-    serial_print(kernel_panic);
+    serial_print(kernel_version);
     serial_print("\n");
     serial_print("[+] Checking post-boot information\n");
     serial_print("boot ptr: ");
@@ -80,7 +80,7 @@ void kernel_main(BootInfo *boot) {
     // Arch depented code following !!!'
     // Both of these are located in "kcode/arch.h" that chooses arch and picks the right folder
     init_cpu();   // The stuff like GDT, IDT, TSS, etc so CPU
-    init_memory(); // Similar to above, but PMM, VMM, HMM, etc. (because of cr3 and MMU)
+    init_memory(boot); // Similar to above, but PMM, VMM, HMM, etc. (because of cr3 and MMU)
 
 
 
