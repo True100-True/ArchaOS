@@ -77,7 +77,7 @@ static cozette_data current_font;
 // THIS is what is used in kernel, doesn't require much allocation
 // kinda fast? I didn't check YET
 void print_init() { // , cozette_data *font
-    if (graphics_init == true)
+    if (graphics_init =! true)
         return;
     current_font = load_glyphs();
 }
