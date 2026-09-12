@@ -84,6 +84,7 @@ void print_init() { // , cozette_data *font
 
 void putchar(char c)
 {
+    serial_putchar(c); // inject into the output system to capture os output
     if (framebuffer_pb == NULL)
         return;
 
@@ -124,6 +125,17 @@ void putchar(char c)
                     0x00000000
                 );
             }
+        }
+
+        return;
+    }
+
+    if (c == '\t') {
+        cursor_x += current_font.width * 4;
+        
+        if (cursor_x + current_font.width > framebuffer_pb->width) {
+            cursor_x = 0;
+            cursor_y += current_font.height;
         }
 
         return;
@@ -204,6 +216,29 @@ static void print_char(const char* to_print ) {
         to_print++;
     }
 }
+static void print_u64(uint64_t value) { 
+    char buf[20]; 
+    int i = 0; 
+    if (value == 0) { 
+        putchar('0'); 
+        return; 
+    } 
+    while (value) { 
+        buf[i++] = '0' + (value % 10); 
+        value /= 10; 
+    } 
+    while (i--) 
+    putchar(buf[i]); 
+}
+static void print_u64_hex(uint64_t value) {
+    putchar('0');
+    putchar('x');
+    for (int i = 15; i >= 0; i--) {
+        putchar(
+            hex_chars[(value >> (i * 4)) & 0xF]
+        );
+    }
+}
 void print(const char *format, ...) {
     if(framebuffer_pb == NULL)
         return;
@@ -221,9 +256,8 @@ void print(const char *format, ...) {
 
         if (!*format)
             break;
-        
-        char nxt_char = *(format+1);
-        switch (nxt_char) {
+
+        switch (*format) {
             case 'd': {
                 int value = va_arg(args, int);
                 print_int(value);
@@ -231,6 +265,10 @@ void print(const char *format, ...) {
             } case 'u': {
                 unsigned int value = va_arg(args, unsigned int);
                 print_uint(value);
+                break;
+            } case 'n': { 
+                uint64_t value = va_arg(args, uint64_t);
+                print_u64(value);
                 break;
             } case 's': {
                 const char *value = va_arg(args, const char *);
@@ -240,10 +278,21 @@ void print(const char *format, ...) {
                 int value = va_arg(args, int);
                 print_hex(value);
                 break;
+            } case 'l': {
+                if (format[1] == 'x') {
+                    uint64_t value = va_arg(args, uint64_t);
+                    print_u64_hex(value);
+                    format += 2;
+                } else {
+                    putchar('%');
+                    putchar('l');
+                    format++;
+                }
+                break;
             } case '%': break;
             default:
                 putchar('%');
-                putchar(nxt_char);
+                putchar(*format);
                 format += 2;
                 continue; // idk how this behaves in switch (skips while OR switch)
         }

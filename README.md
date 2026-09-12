@@ -1,14 +1,13 @@
 <div align="center">
 
-## ArchaOS
-<img src="logo.bmp" alt="ArchaOS logo" width="240" height="240" />
-
-</div>
-
 ### About
 
-ArchaOS is in early development, targetting to be UNIX-like platform with inspiration from TempleOS. Uses GOP mode (UEFI graphics output protocol), ELF executables 
+ArchaOS is in early development, targetting to be UNIX-like platform with inspiration from TempleOS. Uses GOP mode (UEFI graphics output protocol), ELF executables, Initializes IDT, GDT, PMM, VMM
 --thats all for now--.
+
+### Architecture
+
+In my mind the architecture is that kernel provides basic resources and executables. So kernel only initializes basic resources and the userland takes advantage of resources and functions.
 
 ### Run Guide
 
@@ -88,14 +87,17 @@ export PATH=$PATH:~/cross/bin
 ```
 
 Install mingw gcc (used for making .EFI files)
+
 ```Shell
 sudo apt install  gcc-mingw-w64
 ```
 
 Install qemu
-```Shell 
+
+```Shell
 sudo apt install qemu-system
 ```
+
 `
 And make and run
 
@@ -106,17 +108,20 @@ sudo make all run
 process requires sudo permission to create .img that is bootable.
 
 ### Software Requirements
+
 For testing:
+
 * qemu-system-x86_64
-  
+
 Build / compile:
-* build-essential 
-* bison flex 
-* ibgmp3-dev 
-* libmpfr-dev 
-* libmpc-dev 
-* texinfo 
-* libisl-dev 
+
+* build-essential
+* bison flex
+* ibgmp3-dev
+* libmpfr-dev
+* libmpc-dev
+* texinfo
+* libisl-dev
 * make
 
 ### Minimum Requirements

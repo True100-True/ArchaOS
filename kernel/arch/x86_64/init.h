@@ -5,8 +5,9 @@
 
 #include "io.h"
 
-#include "gdt/gdt.h"
-#include "idt/idt.h"
+#include "cpu/gdt/gdt.h"
+#include "cpu/tss/tss.h"
+#include "interrupts/idt.h"
 
 #include "mm/pmm.h"
 #include "mm/vmm.h"
@@ -16,5 +17,6 @@
 
 void init_cpu();
 void init_memory(BootInfo *boot);
+void process();
 
 #endif // INIT_X86_64_H

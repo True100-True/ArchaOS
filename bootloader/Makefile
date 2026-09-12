@@ -63,6 +63,7 @@ debug: $(DISK)
 		-device virtio-gpu \
 		-display gtk \
 		-gdb tcp::9000 \
+		-d int,cpu_reset -D qemu.log \
 		-S
 
 # -device VGA,edid=off \

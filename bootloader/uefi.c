@@ -8,6 +8,16 @@
 #include "../common/fromboot.h" // Contains after boot info for kernel
 #include "../common/fonts/cozette.h"
 
+#define PAGE_SIZE   0x1000
+#define HUGE_PAGE   0x200000ULL
+
+#define PTE_PRESENT  (1ULL << 0)
+#define PTE_RW       (1ULL << 1)
+#define PTE_USER     (1ULL << 2)
+#define PTE_PS       (1ULL << 7)
+
+#define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
+
 typedef int (*KernelEntry)(BootInfo*);
 //typedef void (*KernelHeader)(BootInfo*);
 
@@ -299,6 +309,24 @@ void uefi_print(EFI_SYSTEM_TABLE *st, const CHAR16 *str) {
     st->ConOut->OutputString(st->ConOut, str);
 }
 
+static inline void write_cr3(uint64_t value) {
+    __asm__ volatile (
+        "mov %0, %%cr3"
+        :
+        : "r"(value)
+        : "memory"
+    );
+}
+
+static inline uint64_t read_rip(void) {
+    uint64_t value;
+    __asm__ volatile (
+        "lea 0(%%rip), %0"
+        : "=r"(value)
+    );
+
+    return value;
+}
 typedef struct {
     const CHAR16 *name;
     EFI_STATUS value;
@@ -507,6 +535,8 @@ VOID EFIAPI GopInstalledCallback(
     }
 }
 
+
+
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     gBS = SystemTable->BootServices;
     SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
@@ -700,7 +730,88 @@ gpu_pci_end:
 
 gpu_gop_end:
     uefi_println(SystemTable, L"--- RAM ---");
-    uefi_println(SystemTable, L"In progress.\r\n");
+    uefi_println(SystemTable, L"[+] Initializing Virt to Phys passthru\r\n");
+
+    EFI_PHYSICAL_ADDRESS pml4_addr;
+    EFI_PHYSICAL_ADDRESS pdpt_addr;
+    EFI_PHYSICAL_ADDRESS pd_addr[4];
+
+    Status = gBS->AllocatePages(
+        AllocateAnyPages,
+        EfiLoaderData,
+        1,
+        &pml4_addr
+    );
+
+    if (EFI_ERROR(Status))
+        goto panic;
+
+    Status = gBS->AllocatePages(
+        AllocateAnyPages,
+        EfiLoaderData,
+        1,
+        &pdpt_addr
+    );
+
+    if (EFI_ERROR(Status))
+        goto panic;
+
+    for (int i = 0; i < 4; i++) {
+        Status = gBS->AllocatePages(
+            AllocateAnyPages,
+            EfiLoaderData,
+            1,
+            &pd_addr[i]
+        );
+
+        if (EFI_ERROR(Status))
+            goto panic;
+    }
+
+    gBS->SetMem((VOID *)(UINTN)pml4_addr, 0, PAGE_SIZE);
+    gBS->SetMem((VOID *)(UINTN)pdpt_addr, 0, PAGE_SIZE);
+
+    for (int i = 0; i < 4; i++)
+        gBS->SetMem((VOID *)(UINTN)pd_addr[i], 0, PAGE_SIZE);
+
+    uint64_t *pml4 = (uint64_t *)(UINTN)pml4_addr;
+    uint64_t *pdpt = (uint64_t *)(UINTN)pdpt_addr;
+
+    pml4[0] =
+        (uint64_t)pdpt_addr |
+        PTE_PRESENT |
+        PTE_RW;
+
+    pml4[256] =
+        (uint64_t)pdpt_addr |
+        PTE_PRESENT |
+        PTE_RW;
+
+    for (int j = 0; j < 4; j++) {
+
+        pdpt[j] =
+            (uint64_t)pd_addr[j] |
+            PTE_PRESENT |
+            PTE_RW;
+
+        uint64_t *pd =
+            (uint64_t *)(UINTN)pd_addr[j];
+
+        for (uint64_t i = 0; i < 512; i++) {
+
+            uint64_t physical =
+                ((uint64_t)j * 0x40000000ULL) +
+                (i * HUGE_PAGE);
+
+            pd[i] =
+                physical |
+                PTE_PRESENT |
+                PTE_RW |
+                PTE_PS;
+        }
+    }
+    uefi_print(SystemTable, L"Setup CR3: ");
+    uefi_print_hex(SystemTable, (UINT64)pml4_addr);
 
     /*
     uefi_println(SystemTable, L"--- KERNEL ---");
@@ -1010,6 +1121,7 @@ gpu_gop_end:
         kernelBuffer,
         kernelSize
     );
+    
     uefi_println(SystemTable, L"[+] Kernel copied");
 
     uefi_print(SystemTable, L"kernelPhysAddr = ");
@@ -1033,6 +1145,8 @@ gpu_gop_end:
         uefi_println(SystemTable, L"[-] kernel.elf is not ELF");
         goto panic;
     }
+
+    /*
 
     for (UINT16 i = 0; i < hdr->e_phnum; i++)
     {
@@ -1073,6 +1187,57 @@ gpu_gop_end:
         uefi_print_hex(SystemTable, p->p_filesz);
         uefi_print_hex(SystemTable, p->p_memsz);
         uefi_println(SystemTable, L"");
+    }*/
+
+    uint64_t kernel_phys_start = UINT64_MAX;
+    uint64_t kernel_phys_end = 0;
+    uint64_t kernel_virt_start = UINT64_MAX;
+    uint64_t kernel_virt_end = 0;
+
+    for (UINT16 i = 0; i < hdr->e_phnum; i++)
+    {
+        Elf64_Phdr *p = &phdr[i];
+
+        if (p->p_type != 1)
+            continue;
+
+        EFI_PHYSICAL_ADDRESS addr = p->p_paddr;
+
+        Status = gBS->AllocatePages(
+            AllocateAddress,
+            EfiLoaderData,
+            EFI_SIZE_TO_PAGES(p->p_memsz),
+            &addr
+        );
+
+        if (EFI_ERROR(Status))
+            goto panic;
+
+        gBS->CopyMem(
+            (VOID *)p->p_vaddr,
+            (UINT8 *)kernelAddr + p->p_offset,
+            p->p_filesz
+        );
+
+        if (p->p_memsz > p->p_filesz) {
+            gBS->SetMem(
+                (VOID *)(p->p_vaddr + p->p_filesz),
+                p->p_memsz - p->p_filesz,
+                0
+            );
+        }
+
+        if (p->p_paddr < kernel_phys_start)
+            kernel_phys_start = p->p_paddr;
+
+        if (p->p_paddr + p->p_memsz > kernel_phys_end)
+            kernel_phys_end = p->p_paddr + p->p_memsz;
+
+        if (p->p_vaddr < kernel_virt_start)
+            kernel_virt_start = p->p_vaddr;
+
+        if (p->p_vaddr + p->p_memsz > kernel_virt_end)
+            kernel_virt_end = p->p_vaddr + p->p_memsz;
     }
 
     uefi_print(SystemTable, L"Entry = ");
@@ -1220,8 +1385,8 @@ gop_pick:
     if (skip_monitor) {
         goto gop_end;
     }
-    // Only on real hardware this is possible (my qemu doesnt allow me to do so)
-    uefi_println(SystemTable, " --- Monitor ---");
+    // Only on real hardware this is possible (my qemu doesnt allow me to do so) (read or access EDID)
+    uefi_println(SystemTable, L"--- Monitor ---");
     uefi_print(SystemTable, L"Refresh rate: ");
     CHAR16 RefreshRateBuf[64];
     decimalConvert(RefreshHz, RefreshRateBuf, 64);
@@ -1264,7 +1429,6 @@ gop_end:
 
     
     // TODO: Put back original background
-    /*
     for (UINTN y = 0; y < height; y++) {
         for (UINTN x = 0; x < width; x++) {
             fb[y * pitch + x] = 0x00102030; // dark background
@@ -1281,14 +1445,15 @@ gop_end:
         logo_bmp,
         4
     );
-    */
     
     
+    /*
     for (UINTN y = 0; y < height; y++) {
         for (UINTN x = 0; x < width; x++) {
             fb[y * pitch + x] = 0x000000; // dark background
         }
     }
+    */
     
 
     // Here we need to allocate buffers and pass them to the kernel (if the kernel loaded)
@@ -1365,12 +1530,24 @@ gop_end:
     bootInfo->pixels_per_scanline =
         gop->Mode->Info->PixelsPerScanLine;
 
+    /*
+
     bootInfo->kernel_virtual_address = phdr->p_paddr;
     bootInfo->kernel_physical_address = kernelAddr;
     bootInfo->kernel_physical_address_start = kernelAddr;
     bootInfo->kernel_physical_address_end = kernelAddr + kernelSize;
     
     bootInfo->kernel_size = kernelSize;
+    */
+
+    bootInfo->kernel_physical_address = kernelAddr;
+    bootInfo->kernel_physical_address_start = kernel_phys_start;
+    bootInfo->kernel_physical_address_end   = kernel_phys_end;
+
+    bootInfo->kernel_virtual_address = kernel_virt_start;
+
+    bootInfo->kernel_size =
+        kernel_virt_end - kernel_virt_start;
 
     bootInfo->memory_map = (uint64_t)MemoryMap;
     bootInfo->memory_map_size = MemoryMapSize;
@@ -1424,6 +1601,8 @@ gop_end:
 
     serial_print("Magic: ");
     serial_print_hex(bootInfo->magic);
+
+    write_cr3(pml4_addr);
 
     //uefi_print_hex(SystemTable, kernelAddr); // Causes the error I think aswell
     

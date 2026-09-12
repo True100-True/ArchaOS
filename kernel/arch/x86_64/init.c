@@ -6,24 +6,24 @@
 void test_ppm_func(uint64_t mem_map, uint64_t mem_map_size, uint64_t descriptor_size) {
     print("[TEST] Testing PMM\n");
 
-    uint64_t page = palloc_page();
+    uint64_t page = palloc();
     if (page) {
         kernel_panic("Allocated before PMM init");
     }
     print("[+] Allocation blocked before init\n");
     for (uint64_t i = 0; i < 15; i++) {
-        pfree_page((i * 0x1000));
+        pfree((i * 0x1000));
     }
 
     print("Free pages before init: ");
     print_hex_(get_free_pages());
 
-    print("\nInitializing PMM...\n");
+    print("\n[+] Initializing PMM..\n");
     init_pmm(mem_map, mem_map_size, descriptor_size);
-    print("[+] PMM initialized\n");
+    print("[~] Initialized PMM..\n");
 
     uint64_t before = get_free_pages();
-    page = palloc_page();
+    page = palloc();
 
     if (!page) {
         kernel_panic("Allocation failed");
@@ -33,12 +33,11 @@ void test_ppm_func(uint64_t mem_map, uint64_t mem_map_size, uint64_t descriptor_
     print("\nFree pages: ");
     print_hex_(get_free_pages());
 
-    pfree_page(page);
+    pfree(page);
     print("\nAfter free: ");
 
     print_hex_(get_free_pages());
-    if (get_free_pages() != before)
-    {
+    if (get_free_pages() != before) {
         kernel_panic("Page count mismatch");
     }
 
@@ -49,17 +48,19 @@ void init_memory(BootInfo *boot) {
     // init_pmm(boot->memory_map, boot->memory_map_size, boot->memory_descriptor_size);
     test_ppm_func(boot->memory_map, boot->memory_map_size, boot->memory_descriptor_size);
     print("[~] Loaded PMM..\n");
-    print("[+] Loading VMM\n");
-    init_vmm();
+    print("[+] Loading VMM..\n");
+    init_vmm(boot);
     print("[~] Loaded VMM..\n");
+    print("\nMemory -- Finished\n");
 }
 
 void init_cpu() {
-    print("Initializing ARCH (x86_64)");
-    print("[+] Loading GDT..\n");
+    print("Initializing ARCH (x86_64)\n\n");
+    print("[+] Loading GDT..");
     init_gdt();
-    print("[~] GDT loaded...\n");
-    print("[+] Loading IDT..\n");
+    print("OK\n"); // [~] Loaded GDT
+    print("[+] Loading IDT..");
     init_idt();
-    print("[~] IDT loaded...\n");
+    print("OK\n");
+    print("\nCPU -- Finished\n\n");
 }

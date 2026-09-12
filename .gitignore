@@ -1,5 +1,6 @@
 *.o
 
+*.new
 *.elf
 *.bin
 *.map
@@ -8,5 +9,6 @@
 *.EFI
 *.tags
 *.tmp
+*.code-workspace
 
 toolchain/

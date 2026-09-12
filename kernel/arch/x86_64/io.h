@@ -142,4 +142,23 @@ static inline void write_cr3(uint64_t value) {
     );
 }
 
+static inline uint64_t read_rip(void) {
+    uint64_t value;
+    __asm__ volatile (
+        "lea 0(%%rip), %0"
+        : "=r"(value)
+    );
+
+    return value;
+}
+
+static inline uint64_t read_rsp(void) {
+    uint64_t value;
+    __asm__ volatile (
+        "mov %%rsp, %0" 
+        : "=r"(value)
+    );
+    return value;
+}
+
 #endif

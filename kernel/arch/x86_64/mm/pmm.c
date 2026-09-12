@@ -4,6 +4,22 @@
 
 #include "pmm.h"
 
+uint64_t sizeof_bitmap;
+uint64_t max_pages;
+
+uint8_t *bitmap;
+uint8_t bitmap_addr;
+bool bitmap_init = false;
+
+uint64_t free_pages = 0;
+uint64_t total_pages = 0;
+uint64_t total_ram_pages = 0;
+
+uint64_t total_memory = 0;
+uint64_t total_usable_memory = 0;
+
+uint64_t max_physical_address = 0;
+
 typedef struct memory_region {
     uint64_t    base;
     uint64_t    length;
@@ -41,19 +57,15 @@ typedef struct {
 //memory_region regions[MAX_REGIONS];
 //int region_count = 0;
 
-uint8_t bitmap[SIZEOF_BITMAP];
-bool bitmap_init = false;
-static uint64_t free_pages = 0;
-static uint64_t total_pages = 0;
 
 static bool page_used(uint64_t page) {
-    if(page >= MAX_PAGES)
+    if(page >= max_pages)
         return true;
     return bitmap[page / 8] &
            (1 << (page % 8));
 }
 static void mark_used(uint64_t page) {
-    if(page >= MAX_PAGES)
+    if(page >= max_pages)
         return;
     if(!page_used(page)) {
         bitmap[page / 8] |=
@@ -62,7 +74,7 @@ static void mark_used(uint64_t page) {
     }
 }
 static void mark_free(uint64_t page) {
-    if(page >= MAX_PAGES)
+    if(page >= max_pages)
         return;
     if(page_used(page)) {
         bitmap[page / 8] &=
@@ -87,7 +99,7 @@ void* palloc_page(bool erase) {
         return NULL;
     }
 
-    for (uint64_t byte = 0; byte < SIZEOF_BITMAP; byte++) {
+    for (uint64_t byte = 0; byte < sizeof_bitmap; byte++) {
         if (bitmap[byte] != 0xFF) {
             for (int bit = 0; bit < 8; bit++) {
                 uint8_t mask = 1 << bit;
@@ -107,12 +119,12 @@ void* palloc_page(bool erase) {
     return NULL;
 }
 */
-uint64_t palloc_page(void) {
+uint64_t palloc(void) {
     if (!bitmap_init)
         return 0;
 
     for (uint64_t byte = 0;
-         byte < SIZEOF_BITMAP;
+         byte < sizeof_bitmap;
          byte++) {
         if (bitmap[byte] == 0xFF)
             continue;
@@ -125,7 +137,7 @@ uint64_t palloc_page(void) {
                 uint64_t page =
                     byte * 8 + bit;
 
-                if (page >= MAX_PAGES)
+                if (page >= max_pages)
                     return 0;
 
                 mark_used(page);
@@ -134,8 +146,6 @@ uint64_t palloc_page(void) {
             }
         }
     }
-
-    mark_used(0);
 
     return 0;
 }
@@ -149,7 +159,7 @@ uint64_t palloc_page(void) {
 }
 */
 
-void pfree_page(uint64_t address) {
+void pfree(uint64_t address) {
     uint64_t page = address / PAGE_SIZE;
     mark_free(page);
 }
@@ -162,30 +172,89 @@ uint64_t get_total_pages() {
 }
 
 void init_pmm(uint64_t mem_map, uint64_t mem_map_size, uint64_t descriptor_size) {
-    memset(
-        bitmap,
-        0xFF,
-        sizeof(bitmap)
-    );
-
     free_pages = 0;
     total_pages = 0;
 
+    max_physical_address = 0;
+
     uint64_t entries = mem_map_size / descriptor_size;
+    for(uint64_t i = 0; i < entries; i++) {
+        EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) (
+                (uint8_t*)mem_map + i * descriptor_size );
+        if (desc->Type == EfiConventionalMemory) {
+            uint64_t end = desc->PhysicalStart + desc->NumberOfPages * PAGE_SIZE;
+            if (end > max_physical_address)
+                max_physical_address = end;
+            total_pages += desc->NumberOfPages;
+            print(
+                "Region pages: %n, total: %n\n",
+                desc->NumberOfPages,
+                total_pages
+            );
+        
+            switch (desc->Type) {
+                case EfiConventionalMemory:
+                case EfiLoaderCode:
+                case EfiLoaderData:
+                case EfiBootServicesCode:
+                case EfiBootServicesData:
+                case EfiRuntimeServicesCode:
+                case EfiRuntimeServicesData:
+                case EfiACPIReclaimMemory:
+                case EfiACPIMemoryNVS:
+                    total_ram_pages += desc->NumberOfPages;
+                    break;
+            }
+        }
+    }
+
+    max_pages = max_physical_address / PAGE_SIZE;
+    sizeof_bitmap = (max_pages + 7) / 8;
+
+    //memset(bitmap, 0xFF, sizeof_bitmap);
+
+    for (uint64_t i = 0; i < entries; i++) {
+        EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) (
+                (uint8_t*)mem_map + i * descriptor_size );
+        if (desc->Type != EfiConventionalMemory)
+            continue;
+        // hunt for large enough memory chunk
+        uint64_t mem_chunk_size = desc->NumberOfPages * PAGE_SIZE;
+        if (mem_chunk_size >= sizeof_bitmap) {
+            bitmap_addr = desc->PhysicalStart;
+        }   
+    } 
+
+    bitmap = (void *)bitmap_addr;
+    memset((void *)bitmap, 0xFF, sizeof_bitmap);
+
     for(uint64_t i = 0; i < entries; i++) {
         EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) (
                 (uint8_t*)mem_map + i * descriptor_size );
 
         if(desc->Type == EfiConventionalMemory) {
             uint64_t start = desc->PhysicalStart / PAGE_SIZE;
-            uint64_t pages = desc->NumberOfPages;
-            for(uint64_t p = 0; p < pages; p++) {
+            for(uint64_t p = 0; p < desc->NumberOfPages; p++) {
                 mark_free(start + p);
             }
-            total_pages += pages;
         }
     }
+    
+
+    total_usable_memory = total_pages * PAGE_SIZE;
+    total_memory = total_ram_pages * PAGE_SIZE;
+
+    print("Total memory: %n MB\n", total_memory / (1024*1024));
+    print("Total usable memory: %n MB\n", total_usable_memory / (1024*1024));
+
+    uint64_t bitmap_start_page = bitmap_addr / PAGE_SIZE;
+    uint64_t bitmap_pages = (sizeof_bitmap + PAGE_SIZE - 1) / PAGE_SIZE;
 
     mark_used(0);
+    for (uint64_t i = 0;i < bitmap_pages;i++) {
+        mark_used(bitmap_start_page+i);
+    }
+    
+
     bitmap_init = true;
 }

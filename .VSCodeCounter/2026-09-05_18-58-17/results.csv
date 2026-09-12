@@ -1,0 +1,6 @@
+"filename", "language", "C++", "Makefile", "C", "comment", "blank", "total"
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/Makefile", "Makefile", 0, 56, 0, 1, 17, 74
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/efi.h", "C++", 626, 0, 0, 25, 104, 755
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/elf.h", "C++", 38, 0, 0, 0, 9, 47
+"/home/theblackdev/Documents/OS/anothertry/ArchaOS/bootloader/uefi.c", "C", 0, 0, 1009, 254, 210, 1473
+"Total", "-", 664, 56, 1009, 280, 340, 2349

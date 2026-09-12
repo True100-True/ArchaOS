@@ -1,0 +1,6 @@
+- Fixed virtual memory issues
+- Fixed where the kernel is beign loaded
+
+TODO
+- Fix the warnings (some are dangerous on HW)
+- Start working on .new

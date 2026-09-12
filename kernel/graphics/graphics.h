@@ -5,6 +5,8 @@
 #include "../lib/stdio.h"
 #include "../lib/stdbool.h"
 
+//#define FRAMEBUFFER_VIRT 0x0000000000000000ULL
+
 typedef struct {
     uint64_t width;
     uint64_t height;

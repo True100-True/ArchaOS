@@ -6,7 +6,7 @@ SECTIONS
 
     . = ALIGN(4K);
     kernel_stack_bottom = .;
-    . += 16K;  /* or whatever stack size you want */
+    . += 16K;  /* or whatever stack size we want */
     . = ALIGN(4K);
     kernel_stack_top = .;
 

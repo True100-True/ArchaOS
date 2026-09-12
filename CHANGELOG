@@ -1,13 +1,14 @@
-Sep 4. 2026
-- Started CHANGELOG system
-- starting to change OS to multi CPU compatibility
-- Serial print can be disabled using NOT_QEMU_TEST set to 1
-- moved putchar and framebuffer_t to graphics (graphics/graphics.h)
-- Added ARCHitecture expandibility
+Sep 11. 2026
+- Finished memory
+- Fixed bugs
+- Started process manipulation
 
 TODO:
-- Finish virtual memory (or memory in general)
-- Start userland
-- Start ELF
+- Start working PLAYGROUND
+- Document kernel's desired architecture
+- Finish process in x86_64 architecture
+- Start working on graphics library
+- Finish kernel panic
+- Add modes
 
- (Sorry for bad push)
+()

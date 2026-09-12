@@ -9,8 +9,7 @@ struct gdt_entry {
 
 struct gdt_entry gdt[5];
 
-uint64_t create_descriptor(uint32_t base, uint32_t limit, uint16_t flag)
-{
+uint64_t create_descriptor(uint32_t base, uint32_t limit, uint16_t flag) {
     uint64_t descriptor;
 
     descriptor  = limit & 0x000F0000;
@@ -26,8 +25,7 @@ uint64_t create_descriptor(uint32_t base, uint32_t limit, uint16_t flag)
     return descriptor;
 }
 
-void init_gdt()
-{
+void init_gdt() {
     gdt[0].value = 0;
 
     gdt[1].value = create_descriptor(

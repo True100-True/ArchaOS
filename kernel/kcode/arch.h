@@ -6,6 +6,12 @@
 
 #ifndef X86_64
 #include "../arch/x86_64/init.h"
+#include "../arch/x86_64/io.h"
+
+#include "../arch/x86_64/mm/pmm.h"
+#include "../arch/x86_64/mm/vmm.h"
+
+#include "../arch/x86_64/process/thread.h"
 #endif
 
 
