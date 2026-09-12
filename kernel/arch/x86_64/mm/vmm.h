@@ -6,7 +6,7 @@
 #include "pmm.h"
 #include "../io.h"
 
-#include "../../../../common/fromboot.h" // I guess
+#include "../../../../common/fromboot.h"
 
 
 //#define PAGE_SIZE  0x1000ULL // Already defined in PMM
@@ -21,6 +21,8 @@
 
 #define PASSTHRU_BASE      0xFFFFFFFF80000000ULL
 #define USER_SPACE_BASE  0x0000000000000000ULL
+
+#define STACK_SIZE 4 * PAGE_SIZE // Or 16K for short
 
 extern bool virtual_mem_initialized;
 

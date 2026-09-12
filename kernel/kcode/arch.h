@@ -11,7 +11,7 @@
 #include "../arch/x86_64/mm/pmm.h"
 #include "../arch/x86_64/mm/vmm.h"
 
-#include "../arch/x86_64/process/thread.h"
+#include "../arch/x86_64/thread/thread.h"
 #endif
 
 

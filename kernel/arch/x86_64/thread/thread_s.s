@@ -1,7 +1,12 @@
-.global grab_context restore_context
+.intel_syntax noprefix
 
-; helper functions for thread.c 
-; functions that can restore and grab current CPU context
+.global grab_context 
+.global restore_context 
+.global get_cs 
+.global get_ds
+
+# helper functions for thread.c 
+# functions that can restore and grab current CPU context
 
 grab_context:
     push rax
@@ -21,7 +26,7 @@ grab_context:
     push r15
 
     mov rdi, rsp
-    call timer_handler
+    call catch_current_context
 
     pop r15
     pop r14
@@ -62,3 +67,13 @@ restore_context:
     pop rax
 
     iretq
+
+get_cs:
+    xor eax, eax
+    mov ax, cs
+    ret
+
+get_ds:
+    xor eax, eax
+    mov ax, ds
+    ret

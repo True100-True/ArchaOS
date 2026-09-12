@@ -1,14 +1,20 @@
-Sep 11. 2026
+Sep 12. 2026
 - Finished memory
 - Fixed bugs
 - Started process manipulation
+- Borrowed kmalloc and pic from github.com/dthain/basekernel
+- Started working on interrupts
+- -||- on tss
 
 TODO:
-- Start working PLAYGROUND
+- Start working on PLAYGROUND
 - Document kernel's desired architecture
 - Finish process in x86_64 architecture
 - Start working on graphics library
 - Finish kernel panic
 - Add modes
+- remove borrowed code
+- fix valloc, palloc 
+- finish ACPI
 
 ()
