@@ -11,6 +11,12 @@ See the file LICENSE for details.
 #define PIC_ICW4_SLAVE  0x05
 #define PIC_ACK_SPECIFIC 0x60
 
+#define PIC_COMMAND_MASTER 0x20
+#define PIC_COMMAND_SLAVE 0xA0
+
+#define PIC_DATA_MASTER 0x21
+#define PIC_DATA_SLAVE 0xA1
+
 static uint8_t pic_control[2] = { 0x20, 0xa0 };
 static uint8_t pic_data[2] = { 0x21, 0xa1 };
 
@@ -68,4 +74,19 @@ void pic_acknowledge(uint8_t irq)
 	} else {
 		outb(PIC_ACK_SPECIFIC + irq, pic_control[0]);
 	}
+}
+
+// My (True100-True) code additions
+
+void pic_disable_total() {
+    outb(PIC_COMMAND_MASTER, 0x11);
+    outb(PIC_COMMAND_SLAVE,  0x11);
+    outb(PIC_DATA_MASTER,    0x20);
+    outb(PIC_DATA_SLAVE,     0x28);
+    outb(PIC_DATA_MASTER,    0x2);
+    outb(PIC_DATA_SLAVE,     0x4);
+    outb(PIC_DATA_MASTER, 	 0x01);
+    outb(PIC_DATA_SLAVE, 	 0x01);
+    outb(PIC_DATA_MASTER,    0xFF);
+    outb(PIC_DATA_SLAVE,     0xFF);
 }

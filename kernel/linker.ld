@@ -4,12 +4,6 @@ SECTIONS
 {
     . = 0x100000;
 
-    . = ALIGN(4K);
-    kernel_stack_bottom = .;
-    . += 16K;  /* or whatever stack size we want */
-    . = ALIGN(4K);
-    kernel_stack_top = .;
-
     .text :
     {
         KEEP(*(.text.entry))
@@ -30,5 +24,12 @@ SECTIONS
     {
         *(COMMON)
         *(.bss*)
+    }
+
+    .kernel_stack (NOLOAD) : ALIGN(4K)
+    {
+        kernel_stack_bottom = .;
+        . += 16K;
+        kernel_stack_top = .;
     }
 }

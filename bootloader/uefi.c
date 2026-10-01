@@ -17,6 +17,7 @@
 #define PTE_PS       (1ULL << 7)
 
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
+#define HANDOFF_IDENTITY_SIZE (512ULL * 1024 * 1024 * 1024)
 
 typedef int (*KernelEntry)(BootInfo*);
 //typedef void (*KernelHeader)(BootInfo*);
@@ -152,7 +153,8 @@ VOID *CopyMem(
 }
 */
 
-void DrawBMP(UINT32 *fb, UINTN pitch, UINTN posX, UINTN posY, unsigned char *bmp, UINTN scale) {
+void DrawBMP(UINT32 *fb, UINTN fb_width, UINTN fb_height, UINTN pitch,
+             UINTN posX, UINTN posY, unsigned char *bmp, UINTN scale) {
     BMPHeader *header = (BMPHeader *)bmp;
     BMPInfoHeader *info = (BMPInfoHeader *)(bmp + sizeof(BMPHeader));
     if (header->type != 0x4D42)
@@ -163,8 +165,11 @@ void DrawBMP(UINT32 *fb, UINTN pitch, UINTN posX, UINTN posY, unsigned char *bmp
 
     unsigned char *pixels = bmp + header->offset;
 
-    UINTN width = info->width;
-    UINTN height = info->height;
+    if (info->width <= 0 || info->height <= 0 || scale == 0)
+        return;
+
+    UINTN width = (UINTN)info->width;
+    UINTN height = (UINTN)info->height;
     UINTN rowSize = (width * 3 + 3) & ~3;
 
     for (UINTN y = 0; y < height; y++) {
@@ -178,7 +183,10 @@ void DrawBMP(UINT32 *fb, UINTN pitch, UINTN posX, UINTN posY, unsigned char *bmp
 
             for (UINTN sy = 0; sy < scale; sy++) {
                 for (UINTN sx = 0; sx < scale; sx++) {
-                    fb[(posY + y * scale + sy) * pitch + (posX + x * scale + sx)] = color;
+                    UINTN draw_x = posX + x * scale + sx;
+                    UINTN draw_y = posY + y * scale + sy;
+                    if (draw_x < fb_width && draw_y < fb_height)
+                        fb[draw_y * pitch + draw_x] = color;
                 }
             }
         }
@@ -194,6 +202,7 @@ EFI_GUID gEfiPciIoProtocolGuid =
  {0x4cf5b200,0x68b8,0x4ca5,{0x9e,0xec,0xb2,0x3e,0x3f,0x50,0x02,0x9a}};
 
 EFI_BOOT_SERVICES *gBS;
+static EFI_PHYSICAL_ADDRESS pd_addr[512];
 
 typedef struct {
     UINT16 id;
@@ -327,6 +336,81 @@ static inline uint64_t read_rip(void) {
 
     return value;
 }
+
+static inline uint64_t read_rsp(void) {
+    uint64_t value;
+    __asm__ volatile ("mov %%rsp, %0" : "=r"(value));
+    return value;
+}
+
+static EFI_STATUS allocate_table(EFI_PHYSICAL_ADDRESS *addr) {
+    EFI_STATUS status = gBS->AllocatePages(
+        AllocateAnyPages,
+        EfiLoaderData,
+        1,
+        addr
+    );
+    if (EFI_ERROR(status))
+        return status;
+
+    gBS->SetMem((VOID *)(UINTN)*addr, PAGE_SIZE, 0);
+    return EFI_SUCCESS;
+}
+
+/* The main handoff map uses 2 MiB pages for the first 512 GiB.  This
+ * helper adds 4 KiB identity mappings only when a handoff object is above it. */
+static EFI_STATUS map_handoff_page(uint64_t *pml4, uint64_t physical) {
+    uint64_t pml4_i = (physical >> 39) & 0x1FF;
+    uint64_t pdpt_i = (physical >> 30) & 0x1FF;
+    uint64_t pd_i = (physical >> 21) & 0x1FF;
+    uint64_t pt_i = (physical >> 12) & 0x1FF;
+    EFI_PHYSICAL_ADDRESS table_addr;
+
+    if (!(pml4[pml4_i] & PTE_PRESENT)) {
+        table_addr = 0;
+        EFI_STATUS status = allocate_table(&table_addr);
+        if (EFI_ERROR(status)) return status;
+        pml4[pml4_i] = table_addr | PTE_PRESENT | PTE_RW;
+    }
+
+    uint64_t *pdpt = (uint64_t *)(UINTN)(pml4[pml4_i] & PTE_ADDR_MASK);
+    if (!(pdpt[pdpt_i] & PTE_PRESENT)) {
+        table_addr = 0;
+        EFI_STATUS status = allocate_table(&table_addr);
+        if (EFI_ERROR(status)) return status;
+        pdpt[pdpt_i] = table_addr | PTE_PRESENT | PTE_RW;
+    }
+
+    uint64_t *pd = (uint64_t *)(UINTN)(pdpt[pdpt_i] & PTE_ADDR_MASK);
+    if (!(pd[pd_i] & PTE_PRESENT)) {
+        table_addr = 0;
+        EFI_STATUS status = allocate_table(&table_addr);
+        if (EFI_ERROR(status)) return status;
+        pd[pd_i] = table_addr | PTE_PRESENT | PTE_RW;
+    }
+
+    uint64_t *pt = (uint64_t *)(UINTN)(pd[pd_i] & PTE_ADDR_MASK);
+    pt[pt_i] = (physical & PTE_ADDR_MASK) | PTE_PRESENT | PTE_RW;
+    return EFI_SUCCESS;
+}
+
+static EFI_STATUS map_handoff_range(uint64_t *pml4, uint64_t physical,
+                                    uint64_t size) {
+    uint64_t start = physical & ~(PAGE_SIZE - 1);
+    uint64_t end = physical + size;
+
+    if (end < physical)
+        return EFI_INVALID_PARAMETER;
+
+    for (uint64_t page = start; page < end; page += PAGE_SIZE) {
+        if (page < HANDOFF_IDENTITY_SIZE)
+            continue;
+        EFI_STATUS status = map_handoff_page(pml4, page);
+        if (EFI_ERROR(status))
+            return status;
+    }
+    return EFI_SUCCESS;
+}
 typedef struct {
     const CHAR16 *name;
     EFI_STATUS value;
@@ -443,7 +527,6 @@ void printGOPStats(EFI_SYSTEM_TABLE *st, EFI_GRAPHICS_OUTPUT_MODE_INFORMATION in
     UINT32 HorizontalResolution = info.HorizontalResolution;
     UINT32 VerticalResolution = info.VerticalResolution;
     EFI_GRAPHICS_PIXEL_FORMAT pixelFormat = info.PixelFormat;
-    EFI_PIXEL_BITMASK PixelInformation = info.PixelInformation;
     UINT32 PixelsPerScanLine = info.PixelsPerScanLine;
 
     CHAR16 versionBuf[32];
@@ -456,7 +539,7 @@ void printGOPStats(EFI_SYSTEM_TABLE *st, EFI_GRAPHICS_OUTPUT_MODE_INFORMATION in
     decimalConvert(VerticalResolution, VerticalResolutionBuf, 32);
     decimalConvert(PixelsPerScanLine, PixelsPerScanLineBuf, 32);
 
-    CHAR16 pixelFormatChar16 = L"NoneFound";
+    const CHAR16 *pixelFormatChar16 = L"NoneFound";
     for (UINTN i = 0; i < sizeof(efi_pixel_map_array)/sizeof(efi_pixel_map_array[0]); i++) {
         efi_pixel_map a = efi_pixel_map_array[i];
         if (a.value == pixelFormat)
@@ -465,7 +548,7 @@ void printGOPStats(EFI_SYSTEM_TABLE *st, EFI_GRAPHICS_OUTPUT_MODE_INFORMATION in
 
     uefi_println(st, L"M--------------------");
     uefi_print(st, L"\tVersion             :");
-    uefi_println(st, version);
+    uefi_println(st, versionBuf);
     uefi_print(st, L"\tResolution          :");
     uefi_print(st, HorizontalResolutionBuf);
     uefi_print(st, L"x");
@@ -580,7 +663,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         goto gpu_pci_end; // Pekne jasne vystizne. Poslat ostatnych do riti
     
     if (a == 2) {
-        uefi_println(SystemTable->ConOut, L"Failed to recognise CPU, not registered in database.");
+        uefi_println(SystemTable, L"Failed to recognise CPU, not registered in database.");
     }
 
     
@@ -617,16 +700,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
             (void**)&PciIo
         );
 
-        EFI_STATUS ast = PciIo->Attributes(
-            PciIo,
-            EfiPciIoAttributeOperationEnable,
-            EfiPciIoAttributeBusMaster |
-            EfiPciIoAttributeMemory |
-            EfiPciIoAttributeIo,
-            NULL
-        );
-
-        if (EFI_ERROR(ast)) continue;
         if (EFI_ERROR(st)) continue;
 
         UINT16 VendorId;
@@ -734,7 +807,6 @@ gpu_gop_end:
 
     EFI_PHYSICAL_ADDRESS pml4_addr;
     EFI_PHYSICAL_ADDRESS pdpt_addr;
-    EFI_PHYSICAL_ADDRESS pd_addr[4];
 
     Status = gBS->AllocatePages(
         AllocateAnyPages,
@@ -756,7 +828,7 @@ gpu_gop_end:
     if (EFI_ERROR(Status))
         goto panic;
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 512; i++) {
         Status = gBS->AllocatePages(
             AllocateAnyPages,
             EfiLoaderData,
@@ -768,11 +840,11 @@ gpu_gop_end:
             goto panic;
     }
 
-    gBS->SetMem((VOID *)(UINTN)pml4_addr, 0, PAGE_SIZE);
-    gBS->SetMem((VOID *)(UINTN)pdpt_addr, 0, PAGE_SIZE);
+    gBS->SetMem((VOID *)(UINTN)pml4_addr, PAGE_SIZE, 0);
+    gBS->SetMem((VOID *)(UINTN)pdpt_addr, PAGE_SIZE, 0);
 
-    for (int i = 0; i < 4; i++)
-        gBS->SetMem((VOID *)(UINTN)pd_addr[i], 0, PAGE_SIZE);
+    for (int i = 0; i < 512; i++)
+        gBS->SetMem((VOID *)(UINTN)pd_addr[i], PAGE_SIZE, 0);
 
     uint64_t *pml4 = (uint64_t *)(UINTN)pml4_addr;
     uint64_t *pdpt = (uint64_t *)(UINTN)pdpt_addr;
@@ -787,7 +859,7 @@ gpu_gop_end:
         PTE_PRESENT |
         PTE_RW;
 
-    for (int j = 0; j < 4; j++) {
+    for (int j = 0; j < 512; j++) {
 
         pdpt[j] =
             (uint64_t)pd_addr[j] |
@@ -1250,10 +1322,6 @@ kernel_load_end:
     uefi_println(SystemTable, L"[+] Loading GOP mode.");
     EFI_GUID gopGUID = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
-    EFI_HANDLE Handle;
-    EFI_EVENT gopInstallEvent;
-    VOID *GopRegistration = NULL;
-    EFI_EVENT GopEvent;
 
     Status = gBS->LocateProtocol(
         &gopGUID,
@@ -1261,33 +1329,23 @@ kernel_load_end:
         (VOID **)&gop
     );
     if (EFI_ERROR(Status)) {
-        Status = gBS->CreateEvent(
-            EVT_NOTIFY_SIGNAL,
-            TPL_CALLBACK,
-            GopInstalledCallback,
-            NULL,
-            &GopEvent
-        );
-
-        Status = gBS->RegisterProtocolNotify(
-            &gopGUID,
-            gopInstallEvent,
-            GopRegistration
-        );
-        UINTN Index;
-        gBS->WaitForEvent(1, &gopEventCallProceed, &Index);
-        CHAR16 *IndexBuf[64];
-        decimalConvert(Index, IndexBuf, 64);
-        uefi_print(SystemTable, L"[+] Load GOP exited with Index: ");
-        uefi_println(SystemTable, IndexBuf);
+        uefi_println(SystemTable, L"[!] GOP protocol is unavailable.");
+        goto panic;
     }
 
     uefi_println(SystemTable, L"[*] Loaded GOP protocol.");
     // I guess now we can use GOP
     EFI_GUID gEfiEdidDiscoveredProtocolGuid = EFI_EDID_DISCOVERED_PROTOCOL_GUID;
-    EFI_EDID_DISCOVERED_PROTOCOL *Edid;
+    EFI_EDID_DISCOVERED_PROTOCOL *Edid = NULL;
     int pickhighestFlag = 0;
     int skip_monitor = 0;
+    UINT16 HActive = 0;
+    UINT16 VActive = 0;
+    float RefreshHz = 0;
+    UINTN SizeOfInfo;
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info;
+    UINT32 choosenMode = 0;
+    int foundMode = 0;
     Status = gBS->LocateProtocol(
         &gEfiEdidDiscoveredProtocolGuid, 
         NULL, 
@@ -1297,7 +1355,8 @@ kernel_load_end:
     int preferClassic = 1;
 
     // Parse the edid
-    if (Edid->SizeOfEdid < 128 || Edid->Edid == NULL) { // Docs say that available edid is bigger then 128
+    if (EFI_ERROR(Status) || Edid == NULL ||
+        Edid->SizeOfEdid < 128 || Edid->Edid == NULL) {
         if (preferClassic != 1) {
             uefi_println(SystemTable, L"[!] No available information about monitor, picking highest resolution.");
         } else {
@@ -1317,20 +1376,16 @@ kernel_load_end:
         goto panic;
     }
     
-    UINT16 HActive = ((DTD[2] + ((DTD[4] & 0xF0) << 4)));
-    UINT16 VActive = ((DTD[5] + ((DTD[7] & 0xF0) << 4)));
+    HActive = ((DTD[2] + ((DTD[4] & 0xF0) << 4)));
+    VActive = ((DTD[5] + ((DTD[7] & 0xF0) << 4)));
 
     UINT16 HTotal = HActive + (DTD[3] + ((DTD[4] & 0x0F) << 8));
     UINT16 VTotal = VActive + (DTD[6] + ((DTD[7] & 0x0F) << 8));
 
     float PixelClockHz = PixelClock * 10000;
-    float RefreshHz = PixelClockHz / (HTotal * VTotal);
+    RefreshHz = PixelClockHz / (HTotal * VTotal);
 
     int printGOP = 1; // Later it would be cool to read a config and print based of it
-    UINTN SizeOfInfo;
-    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info;
-    UINT32 choosenMode = 0;
-
 gop_pick:
     // Terrible, ugly -> Will do the job for now (later I will audit and rewrite this) 
     if (preferClassic == 1) {
@@ -1347,6 +1402,9 @@ gop_pick:
             &Info
         );
 
+        if (EFI_ERROR(Status))
+            continue;
+
         uefi_print(SystemTable, L"\t");
         CHAR16 buffff[256];
         decimalConvert(Info->HorizontalResolution, buffff, sizeof(buffff));
@@ -1355,19 +1413,28 @@ gop_pick:
         decimalConvert(Info->VerticalResolution, buffff, sizeof(buffff));
         uefi_println(SystemTable, buffff);
 
-        if (EFI_ERROR(Status))
-            continue;
-
-
         if (printGOP)
             printGOPStats(SystemTable, *Info);
 
+        if (Info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor &&
+            Info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor) {
+            gBS->FreePool(Info);
+            continue;
+        }
+
+        if (!foundMode) {
+            choosenMode = i;
+            foundMode = 1;
+        }
+
 
         // Exact requested resolution
-        if (Info->HorizontalResolution == HActive &&
+        if (!skip_monitor &&
+            Info->HorizontalResolution == HActive &&
             Info->VerticalResolution == VActive)
         {
             choosenMode = i;
+            gBS->FreePool(Info);
             break;
         }
 
@@ -1378,8 +1445,14 @@ gop_pick:
             Info->VerticalResolution == 1080)
         {
             choosenMode = i;
+            gBS->FreePool(Info);
             break;
         }
+        gBS->FreePool(Info);
+    }
+    if (!foundMode) {
+        uefi_println(SystemTable, L"[!] No supported linear framebuffer mode.");
+        goto panic;
     }
     uefi_println(SystemTable, L"Mode was choosen..");
     if (skip_monitor) {
@@ -1417,7 +1490,7 @@ gop_end:
     uefi_println(SystemTable, L"[+] Entering GOP mode..");
     Status = gop->SetMode(gop, choosenMode);
     if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, "[!] Failed to set GOP mode.");
+        uefi_println(SystemTable, L"[!] Failed to set GOP mode.");
         goto panic; // Later try to initialize other functions and let kernel do its own thing
     }
     SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
@@ -1439,9 +1512,11 @@ gop_end:
     
     DrawBMP(
         fb,
+        width,
+        height,
         pitch,
-        (width - 50 * 4) / 2,
-        (height - 50 * 4) / 2,
+        width > 200 ? (width - 200) / 2 : 0,
+        height > 200 ? (height - 200) / 2 : 0,
         logo_bmp,
         4
     );
@@ -1456,17 +1531,40 @@ gop_end:
     */
     
 
-    // Here we need to allocate buffers and pass them to the kernel (if the kernel loaded)
-    // which indeed didn't so we gotta just skip to ass
-    //goto panic; // Because of disabled kernel loading
-
-    BootInfo *bootInfo;
-
-    Status = gBS->AllocatePool(
-        EfiLoaderData,
-        sizeof(BootInfo),
-        (VOID**)&bootInfo
+    /* Keep executing code, the active firmware stack, and the framebuffer
+     * reachable after replacing the firmware page tables. */
+    Status = map_handoff_range(
+        pml4,
+        (uint64_t)LoadedImage->ImageBase,
+        LoadedImage->ImageSize
     );
+    if (EFI_ERROR(Status))
+        goto panic;
+
+    uint64_t handoff_rsp = read_rsp();
+    uint64_t stack_start = handoff_rsp > 0x10000 ? handoff_rsp - 0x10000 : 0;
+    Status = map_handoff_range(pml4, stack_start, 0x20000);
+    if (EFI_ERROR(Status))
+        goto panic;
+
+    Status = map_handoff_range(
+        pml4,
+        gop->Mode->FrameBufferBase,
+        gop->Mode->FrameBufferSize
+    );
+    if (EFI_ERROR(Status))
+        goto panic;
+
+    // Here we need to allocate buffers and pass them to the kernel (if the kernel loaded)
+
+    EFI_PHYSICAL_ADDRESS bootInfoAddr = 0xFFFFFFFFULL;
+    Status = gBS->AllocatePages(
+        AllocateMaxAddress,
+        EfiLoaderData,
+        EFI_SIZE_TO_PAGES(sizeof(BootInfo)),
+        &bootInfoAddr
+    );
+    BootInfo *bootInfo = (BootInfo *)(UINTN)bootInfoAddr;
 
     if (EFI_ERROR(Status)) {
         uefi_println(SystemTable, L"[!] Failed to allocate pool for bootinfo...");
@@ -1488,12 +1586,21 @@ gop_end:
         &DescriptorVersion
     );
 
+    if (Status != EFI_BUFFER_TOO_SMALL) {
+        uefi_println(SystemTable, L"[!] Memory map size lookup failed");
+        goto panic;
+    }
+
     MemoryMapSize += DescriptorSize * 8;
-    Status = gBS->AllocatePool(
+    UINTN MemoryMapCapacity = MemoryMapSize;
+    EFI_PHYSICAL_ADDRESS MemoryMapAddr = 0xFFFFFFFFULL;
+    Status = gBS->AllocatePages(
+        AllocateMaxAddress,
         EfiLoaderData,
-        MemoryMapSize,
-        (VOID**)&MemoryMap
+        EFI_SIZE_TO_PAGES(MemoryMapCapacity),
+        &MemoryMapAddr
     );
+    MemoryMap = (EFI_MEMORY_DESCRIPTOR *)(UINTN)MemoryMapAddr;
 
     if (EFI_ERROR(Status)) {
         uefi_println(SystemTable, L"[!] Memory map alloc failed");
@@ -1529,6 +1636,8 @@ gop_end:
 
     bootInfo->pixels_per_scanline =
         gop->Mode->Info->PixelsPerScanLine;
+    bootInfo->framebuffer_pixel_format =
+        gop->Mode->Info->PixelFormat;
 
     /*
 
@@ -1564,35 +1673,25 @@ gop_end:
     Status = gBS->ExitBootServices(ImageHandle, MapKey);
     if (EFI_ERROR(Status)) {
         uefi_println(SystemTable, L"[!] ExitBootServices failed");
-        uefi_status_println(SystemTable, Status);
-        int success = 0;
-        while (!success) {
-            MemoryMapSize = 0;
-
-            gBS->GetMemoryMap(
-                &MemoryMapSize,
-                NULL,
-                &MapKey,
-                &DescriptorSize,
-                &DescriptorVersion
-            );
-
-            // add some extra space
-            MemoryMapSize += DescriptorSize * 8;
-
-            gBS->AllocatePool(
-                EfiLoaderData,
-                MemoryMapSize,
-                (VOID**)&MemoryMap
-            );
-
-            Status = gBS->ExitBootServices(ImageHandle, MapKey);
-            if (!EFI_ERROR(Status)) {
-                success = 1;
-            }
-
-            if (MemoryMapSize > 1024*1024*1024)
-                goto panic;
+        /* Do not allocate here: allocation changes the map and invalidates MapKey. */
+        MemoryMapSize = MemoryMapCapacity;
+        Status = gBS->GetMemoryMap(
+            &MemoryMapSize,
+            MemoryMap,
+            &MapKey,
+            &DescriptorSize,
+            &DescriptorVersion
+        );
+        if (EFI_ERROR(Status)) {
+            uefi_println(SystemTable, L"[!] Memory map refresh failed");
+            goto panic;
+        }
+        bootInfo->memory_map_size = MemoryMapSize;
+        bootInfo->memory_descriptor_size = DescriptorSize;
+        Status = gBS->ExitBootServices(ImageHandle, MapKey);
+        if (EFI_ERROR(Status)) {
+            uefi_println(SystemTable, L"[!] ExitBootServices retry failed");
+            goto panic;
         }
     }
 

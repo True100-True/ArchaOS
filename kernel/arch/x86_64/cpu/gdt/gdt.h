@@ -6,6 +6,11 @@
 // Used for creating GDT segment descriptors in 64-bit integer form.
 
 #include <stdint.h>
+
+#define KERNEL_CS  0x08
+#define KERNEL_DS  0x10
+#define USER_CS    0x18
+#define USER_DS    0x20
  
 // Each define here is for a specific flag in the descriptor.
 // Refer to the intel documentation for a description of what each one does.
@@ -74,5 +79,9 @@ extern void setSegments();
 extern void setGdt();
 void init_gdt();
 void load_gdt(uint16_t limit, uint64_t base);
+
+extern uint8_t get_ds(void);
+extern uint8_t get_cs(void);
+
 
 #endif

@@ -3,12 +3,13 @@
 // atleast to the point of PMM test so yeah
 
 #include "pmm.h"
+#include "../../../errs/pnc.h"
 
 uint64_t sizeof_bitmap;
 uint64_t max_pages;
 
 uint8_t *bitmap;
-uint8_t bitmap_addr;
+uint64_t bitmap_addr;
 bool bitmap_init = false;
 
 uint64_t free_pages = 0;
@@ -174,6 +175,7 @@ uint64_t get_total_pages() {
 void init_pmm(uint64_t mem_map, uint64_t mem_map_size, uint64_t descriptor_size) {
     free_pages = 0;
     total_pages = 0;
+    total_ram_pages = 0;
 
     max_physical_address = 0;
 
@@ -213,6 +215,7 @@ void init_pmm(uint64_t mem_map, uint64_t mem_map_size, uint64_t descriptor_size)
 
     //memset(bitmap, 0xFF, sizeof_bitmap);
 
+    bitmap_addr = 0;
     for (uint64_t i = 0; i < entries; i++) {
         EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) (
                 (uint8_t*)mem_map + i * descriptor_size );
@@ -220,10 +223,13 @@ void init_pmm(uint64_t mem_map, uint64_t mem_map_size, uint64_t descriptor_size)
             continue;
         // hunt for large enough memory chunk
         uint64_t mem_chunk_size = desc->NumberOfPages * PAGE_SIZE;
-        if (mem_chunk_size >= sizeof_bitmap) {
+        if (mem_chunk_size >= sizeof_bitmap && bitmap_addr == 0) {
             bitmap_addr = desc->PhysicalStart;
-        }   
+        }
     } 
+
+    if (bitmap_addr == 0)
+        kernel_panic("No room for PMM bitmap");
 
     bitmap = (void *)bitmap_addr;
     memset((void *)bitmap, 0xFF, sizeof_bitmap);

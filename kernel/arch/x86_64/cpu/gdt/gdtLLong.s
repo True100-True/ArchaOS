@@ -1,6 +1,8 @@
 .intel_syntax noprefix
 
 .global load_gdt
+.global get_cs 
+.global get_ds
 
 .section .data
 
@@ -40,4 +42,14 @@ reload_segments:
     mov gs, ax
     mov ss, ax
 
+    ret
+
+get_cs:
+    xor eax, eax
+    mov ax, cs
+    ret
+
+get_ds:
+    xor eax, eax
+    mov ax, ds
     ret

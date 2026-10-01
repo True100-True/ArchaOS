@@ -1,10 +1,10 @@
-Sep 12. 2026
-- Finished memory
-- Fixed bugs
-- Started process manipulation
-- Borrowed kmalloc and pic from github.com/dthain/basekernel
-- Started working on interrupts
-- -||- on tss
+Oct. 1 2026
+- Finished memory (mm)
+- Fixed makefile
+- Removed sudo hungry code in makefile
+- Updated readme
+- Added version tracking for bootloader
+- Expanded x86_64 arch code
 
 TODO:
 - Start working on PLAYGROUND
@@ -15,6 +15,6 @@ TODO:
 - Add modes
 - remove borrowed code
 - fix valloc, palloc 
-- finish ACPI
+- finish APIC
 
-()
+(Had a break because of some issues)

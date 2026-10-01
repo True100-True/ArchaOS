@@ -5,39 +5,39 @@ CFLAGS = -ffreestanding -fshort-wchar -mno-red-zone -nostdlib \
 	-Wl,-subsystem,10 -Wl,--entry=efi_main
 
 TARGET = BOOTX64.EFI
+KERNEL = ../kernel/kernel.elf
 SOURCE = uefi.c
 DISK = img.img
+DISK_SIZE = 260M
 
 all: $(TARGET)
 
 $(TARGET): $(SOURCE)
 	$(CC) $(CFLAGS) -o $@ $<
 
+$(DISK): $(TARGET) $(KERNEL)
+	rm -f $@
 
-$(DISK): $(TARGET)
-	cp $(TARGET) ../test_disk/EFI/BOOT/
-	cp ../kernel/kernel.elf ../test_disk/
+	# Create empty disk
+	truncate -s $(DISK_SIZE) $@
 
-	rm -f $(DISK)
+	# Create GPT and one EFI System Partition
+	sgdisk \
+		--clear \
+		--new=1:2048:0 \
+		--typecode=1:ef00 \
+		--change-name=1:EFI \
+		$@
 
-	dd if=/dev/zero of=$(DISK) bs=1M count=64
+	# Format partition 1 as FAT32
+	mkfs.fat -F32 -n EFI --offset=2048 $@
+	
+	mmd -i img.img@@1M ::/EFI
+	mmd -i img.img@@1M ::/EFI/BOOT
 
-	parted $(DISK) --script \
-		mklabel gpt \
-		mkpart ESP fat32 1MiB 63MiB \
-		set 1 esp on
-
-	sudo losetup -Pf $(DISK)
-
-	LOOP=$$(losetup -j $(DISK) | cut -d: -f1); \
-	echo "Using $$LOOP"; \
-	sudo mkfs.fat -F32 -n ESP $$LOOP"p1"; \
-	sudo mkdir -p /tmp/efimount; \
-	sudo mount $$LOOP"p1" /tmp/efimount; \
-	sudo cp -r ../test_disk/. /tmp/efimount; \
-	sync; \
-	sudo umount /tmp/efimount; \
-	sudo losetup -d $$LOOP
+	# Copy files into the FAT filesystem without mounting
+	mcopy -i $@@@1M -s $(TARGET) ::/EFI/BOOT/BOOTX64.EFI
+	mcopy -i $@@@1M $(KERNEL) ::/kernel.elf
 
 
 run: $(DISK)
@@ -45,7 +45,7 @@ run: $(DISK)
 		-machine q35 \
 		-m 512M \
 		-cpu qemu64 \
-		-bios /usr/share/ovmf/OVMF.fd \
+		-bios /usr/share/ovmf/x64/OVMF.4m.fd \
 		-drive file=$(DISK),format=raw \
 		-net none \
 		-serial stdio \

@@ -2,7 +2,6 @@
 
 #include "gdt.h"
 #include <stdint.h>
-
 struct gdt_entry {
     uint64_t value;
 };

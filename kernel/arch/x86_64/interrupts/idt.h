@@ -2,6 +2,7 @@
 #define IDT_H
 
 #include <stdint.h>
+#include "../timer/clock.h" // For tick_timer
 
 struct idt_entry {
     uint16_t offset_low;
@@ -22,11 +23,9 @@ struct idt_ptr {
 } __attribute__((packed));
 
 
-void idt_set_gate(
-    uint8_t vector,
-    void (*handler)(void)
-);
+void idt_set_gate(struct idt_entry idt[256], uint8_t vector, void (*handler)(void));
+extern void load_idt(uint16_t size, uint64_t base);
 
-void init_idt();
+//void init_idt();
 
 #endif

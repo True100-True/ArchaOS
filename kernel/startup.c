@@ -50,7 +50,7 @@ void kernel_main(BootInfo *boot) {
     serial_putchar('L');
     */
 
-    const char *kernel_version = "0.1.1"; 
+    const char *kernel_version = "CORE 0.1.2"; 
 
     serial_init();
 
@@ -61,12 +61,15 @@ void kernel_main(BootInfo *boot) {
     serial_print("[+] Checking post-boot information\n");
     serial_print("boot ptr: ");
     serial_print_hex((uint64_t)boot);
-    serial_print("magic: ");
-    serial_print_hex(boot->magic);
-
-    if (boot == 0 || boot->magic != BOOTINFOMAGIC) {
+    if (boot == 0) {
         serial_print("\t[!] Post-boot information table -- missing magic...\n");
         return; // I want to return to bootloader but bootloaders are retarted when somethin like this happens
+    }
+    serial_print("magic: ");
+    serial_print_hex(boot->magic);
+    if (boot->magic != BOOTINFOMAGIC) {
+        serial_print("\t[!] Post-boot information table -- missing magic...\n");
+        return;
     }
     if (boot->framebuffer_base == 0) {
         serial_print("\t[!] Frame buffer base addr is missing...\n");
@@ -74,6 +77,10 @@ void kernel_main(BootInfo *boot) {
     }
     if (boot->width == 0 || boot->height == 0) {
         serial_print("\t[!] Sizes (of frame buffer) are missing...\n");
+        return;
+    }
+    if (boot->framebuffer_pixel_format > 1) {
+        serial_print("\t[!] Unsupported frame buffer pixel format...\n");
         return;
     }
 
@@ -117,6 +124,16 @@ void kernel_main(BootInfo *boot) {
     print("Kernel physical addr: %lx \n", boot->kernel_physical_address);
     print("Kernel virtual  addr: %lx \n\n", boot->kernel_virtual_address);
 
+    print("All done.\n");
+
+    print("Time: %n \n", get_ticks());
+
+    /*
+    while (!(get_ticks() >= 200)) {
+        print("Time: %n \n", get_ticks());
+    }
+    */
+
     while (1)
-        asm volatile("hlt");
+        asm("hlt");
 }

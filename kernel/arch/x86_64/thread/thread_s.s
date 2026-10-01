@@ -67,13 +67,3 @@ restore_context:
     pop rax
 
     iretq
-
-get_cs:
-    xor eax, eax
-    mov ax, cs
-    ret
-
-get_ds:
-    xor eax, eax
-    mov ax, ds
-    ret

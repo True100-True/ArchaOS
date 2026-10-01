@@ -14,6 +14,7 @@ typedef struct {
     uint32_t width;
     uint32_t height;
     uint32_t pixels_per_scanline;
+    uint32_t framebuffer_pixel_format;
 
     uint64_t memory_map;
     uint64_t memory_map_size;

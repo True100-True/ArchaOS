@@ -5,6 +5,7 @@
 #include "../../../lib/string.h"
 #include "../../../lib/kmalloc.h"
 #include "../mm/vmm.h"
+#include "../cpu/gdt/gdt.h"
 
 // Credit: https://baponkar.github.io/Osdev-Notes/05_Scheduling/02_Scheduler.html
 
@@ -41,6 +42,7 @@ typedef struct thread_t {
     status_t thread_status;
     uint8_t *kernel_stack;
     context_t *cpu_state;
+    
     struct thread_t* next;
 } thread_t;
 
@@ -48,8 +50,6 @@ typedef struct thread_t {
 
 extern context_t *grab_context();
 extern void restore_context(context_t *ctx);
-extern uint8_t get_ds(void);
-extern uint8_t get_cs(void);
 
 thread_t thread_create(uint64_t entry_point);
 void thread_kill(thread_t *thread);

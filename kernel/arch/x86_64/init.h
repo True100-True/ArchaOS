@@ -2,12 +2,17 @@
 #define INIT_X86_64_H
 
 #include "../../lib/stdio.h"
+#include "../../lib/stdbool.h"
+#include "cpu/cpuid/cpuid.h"
 
 #include "io.h"
 
 #include "cpu/gdt/gdt.h"
 #include "cpu/tss/tss.h"
 #include "interrupts/idt.h"
+#include "syscalls/syscalls.h"
+#include "timer/clock.h"
+#include "timer/pic.h"
 
 #include "mm/pmm.h"
 #include "mm/vmm.h"

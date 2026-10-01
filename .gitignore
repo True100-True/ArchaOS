@@ -11,6 +11,8 @@
 *.tmp
 *.code-workspace
 
-.VSCodeCounter
+remote/
+
+.VSCodeCounter/
 
 toolchain/

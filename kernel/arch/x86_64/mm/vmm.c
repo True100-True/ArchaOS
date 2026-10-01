@@ -1,4 +1,5 @@
 #include "vmm.h"
+#include "../../../errs/pnc.h"
 
 /*
 Important!!!
@@ -53,6 +54,8 @@ void map_page(uint64_t phys_addr, uint64_t virt_addr, uint64_t pml4_phys) {
 
     if (!(pml4[pml4_i] & PTE_PRESENT)) {
         uint64_t pdpt_phys = palloc();
+        if (!pdpt_phys)
+            kernel_panic("Out of memory creating PDPT");
         uint64_t *pdpt = page_table_ptr(pdpt_phys);
 
         memset(pdpt, 0, 0x1000);
@@ -68,6 +71,8 @@ void map_page(uint64_t phys_addr, uint64_t virt_addr, uint64_t pml4_phys) {
 
     if (!(pdpt[pdpt_i] & PTE_PRESENT)) {
         uint64_t pd_phys = palloc();
+        if (!pd_phys)
+            kernel_panic("Out of memory creating PD");
         uint64_t *pd = page_table_ptr(pd_phys);
 
         memset(pd, 0, 0x1000);
@@ -84,6 +89,8 @@ void map_page(uint64_t phys_addr, uint64_t virt_addr, uint64_t pml4_phys) {
 
     if (!(pd[pd_i] & PTE_PRESENT)) {
         uint64_t pt_phys = palloc();
+        if (!pt_phys)
+            kernel_panic("Out of memory creating PT");
         uint64_t *pt = page_table_ptr(pt_phys);
 
         memset(pt, 0, 0x1000);
@@ -164,8 +171,13 @@ Init vmm maps kernel, framebuffer to new addresses
 */
 
 void map_range(uint64_t phys, uint64_t virt, uint64_t size, uint64_t pml4_phys) {
-    for (uint64_t off = 0; off < size; off += PAGE_SIZE)
-        map_page(phys + off, virt + off, pml4_phys);
+    uint64_t phys_page = phys & PAGE_MASK;
+    uint64_t virt_page = virt & PAGE_MASK;
+    uint64_t offset = phys - phys_page;
+    uint64_t mapped_size = size + offset;
+
+    for (uint64_t off = 0; off < mapped_size; off += PAGE_SIZE)
+        map_page(phys_page + off, virt_page + off, pml4_phys);
 }
 
 void init_vmm(BootInfo *boot) {
@@ -182,6 +194,9 @@ void init_vmm(BootInfo *boot) {
     uint64_t pdpt_phys = palloc();
     uint64_t pd_phys   = palloc();
     uint64_t pt_phys   = palloc();
+
+    if (!pml4_phys || !pdpt_phys || !pd_phys || !pt_phys)
+        kernel_panic("Out of memory creating VMM");
 
     uint64_t *pml4 = (uint64_t *)pml4_phys;
     uint64_t *pdpt = (uint64_t *)pdpt_phys;
@@ -273,7 +288,7 @@ void init_vmm(BootInfo *boot) {
     map_range(
         (uint64_t)boot->memory_map & ~(PAGE_SIZE - 1),
         (uint64_t)boot->memory_map & ~(PAGE_SIZE - 1),
-        boot->memory_map_size,
+        boot->memory_map_size + ((uint64_t)boot->memory_map & (PAGE_SIZE - 1)),
         pml4_phys
     );
     print("DONE\n");
@@ -293,4 +308,3 @@ void init_vmm(BootInfo *boot) {
 
     // After this you can't access physical memory 1:1 as old cr3 will be not in effect
 }
-

@@ -17,7 +17,7 @@ extern uint64_t sizeof_bitmap;
 extern uint64_t max_pages;
 
 extern uint8_t *bitmap;
-extern uint8_t bitmap_addr;
+extern uint64_t bitmap_addr;
 extern bool bitmap_init;
 
 extern uint64_t free_pages;
