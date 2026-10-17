@@ -15,6 +15,8 @@
 #define PTE_RW       (1ULL << 1)
 #define PTE_USER     (1ULL << 2)
 #define PTE_PS       (1ULL << 7)
+#define PTE_PWT      (1ULL << 3)
+#define PTE_PCD      ((1ULL << 4))
 
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
 #define HANDOFF_IDENTITY_SIZE (512ULL * 1024 * 1024 * 1024)
@@ -846,6 +848,8 @@ gpu_gop_end:
     for (int i = 0; i < 512; i++)
         gBS->SetMem((VOID *)(UINTN)pd_addr[i], PAGE_SIZE, 0);
 
+    /*
+
     uint64_t *pml4 = (uint64_t *)(UINTN)pml4_addr;
     uint64_t *pdpt = (uint64_t *)(UINTN)pdpt_addr;
 
@@ -884,6 +888,35 @@ gpu_gop_end:
     }
     uefi_print(SystemTable, L"Setup CR3: ");
     uefi_print_hex(SystemTable, (UINT64)pml4_addr);
+    */
+
+    uint64_t *pml4 = (uint64_t *)(UINTN)pml4_addr;
+    uint64_t *pdpt = (uint64_t *)(UINTN)pdpt_addr;
+
+    // 1. Link PML4 to PDPT
+    // Mapping both the lower half and the higher half (canonical) to the same PDPT
+    // is a common trick, but for strict 1:1, just do the first entry.
+    pml4[0] = (uint64_t)pdpt_addr | PTE_PRESENT | PTE_RW;
+
+    // 2. Fill the PDPT and PDs
+    // We will map the first 512 GB of RAM.
+    for (int j = 0; j < 512; j++) {
+        // Link PDPT entry to the corresponding Page Directory
+        pdpt[j] = (uint64_t)pd_addr[j] | PTE_PRESENT | PTE_RW;
+
+        uint64_t *pd = (uint64_t *)(UINTN)pd_addr[j];
+
+        for (int i = 0; i < 512; i++) {
+            // Calculate physical address: 
+            // (j * 1GB) + (i * 2MB)
+            uint64_t physical = ((uint64_t)j * 0x40000000ULL) + ((uint64_t)i * 0x200000ULL);
+
+            // Map it 1:1 with the Page Size (PS) bit set for 2MB pages
+            pd[i] = physical | PTE_PRESENT | PTE_RW | PTE_PS;
+        }
+    }
+
+
 
     /*
     uefi_println(SystemTable, L"--- KERNEL ---");
@@ -1023,6 +1056,10 @@ gpu_gop_end:
     );
 
     */
+
+ram_init_end:
+    uefi_println(SystemTable, L"--- KERNEL RESOURCES ---");
+
 
     uefi_println(SystemTable, L"--- KERNEL ---");
     uefi_println(SystemTable, L"[+] Loading main kernel...");
@@ -1482,6 +1519,8 @@ gop_end:
     uefi_print(SystemTable, L"x");
     decimalConvert(gop->Mode->Info->VerticalResolution, bufff, sizeof(bufff));
     uefi_println(SystemTable, bufff);
+    uefi_print(SystemTable, L"framebuffer_size=");
+    uefi_print_hex(SystemTable, gop->Mode->FrameBufferSize);
 
     uefi_println(SystemTable, L"Press any key to enter kernel...");
     EFI_INPUT_KEY k;
@@ -1495,16 +1534,16 @@ gop_end:
     }
     SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
     
-    UINT32 *fb = (UINT32 *)gop->Mode->FrameBufferBase;
-    UINTN width  = gop->Mode->Info->HorizontalResolution;
-    UINTN height = gop->Mode->Info->VerticalResolution;
-    UINTN pitch  = gop->Mode->Info->PixelsPerScanLine;
+    UINT32 *fb    = (UINT32 *)gop->Mode->FrameBufferBase;
+    UINTN width   = gop->Mode->Info->HorizontalResolution;
+    UINTN height  = gop->Mode->Info->VerticalResolution;
+    UINTN pitch   = gop->Mode->Info->PixelsPerScanLine;
 
     
     // TODO: Put back original background
     for (UINTN y = 0; y < height; y++) {
         for (UINTN x = 0; x < width; x++) {
-            fb[y * pitch + x] = 0x00102030; // dark background
+            fb[y * pitch + x] = 0x00102030; // darker background
         }
     }
     

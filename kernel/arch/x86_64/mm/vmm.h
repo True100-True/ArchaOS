@@ -8,6 +8,8 @@
 
 #include "../../../../common/fromboot.h"
 
+#include "../cpu/msr/msr.h"
+
 
 //#define PAGE_SIZE  0x1000ULL // Already defined in PMM
 #define PAGE_MASK  (~(PAGE_SIZE - 1))
@@ -15,11 +17,15 @@
 #define PTE_PRESENT  (1ULL << 0)
 #define PTE_RW       (1ULL << 1)
 #define PTE_USER     (1ULL << 2)
+#define PTE_PS       (1ULL << 7)
+#define PTE_PWT      (1ULL << 3)
+#define PTE_PCD      ((1ULL << 4))
 // TODO: expand and implement vprotect();
 
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
 
-#define PASSTHRU_BASE      0xFFFFFFFF80000000ULL
+#define KHEAP_BASE       0xFFFFFFFE00000000ULL
+#define PASSTHRU_BASE    0xFFFFFFFF80000000ULL
 #define USER_SPACE_BASE  0x0000000000000000ULL
 
 #define STACK_SIZE 4 * PAGE_SIZE // Or 16K for short
@@ -30,5 +36,8 @@ void init_vmm(BootInfo *boot);
 
 uint64_t valloc(bool zero);
 void vfree(uint64_t virt_addr);
+
+uint64_t vallocs(bool zero, uint64_t count);
+void vfrees(uint64_t virt_addr, uint64_t count);
 
 #endif // VMM_H

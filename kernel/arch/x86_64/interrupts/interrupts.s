@@ -3,6 +3,7 @@
 .global general_protection_handler
 .global page_fault_handler
 .global double_fault_handler
+.global spurious_int_handler
 
 .text
 
@@ -72,6 +73,15 @@ page_fault_handler:
 double_fault_handler:
     SAVE_REGISTERS
     call double_fault
+    RESTORE_REGISTERS
+    add $8, %rsp
+    iretq
+
+/* These are ACPI specific interrupts !!! */
+
+spurious_int_handler:
+    SAVE_REGISTERS
+    /*!!! add the spurius function !!!*/
     RESTORE_REGISTERS
     add $8, %rsp
     iretq

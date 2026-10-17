@@ -42,8 +42,14 @@
 .endm
 
 tick_interrupt:
+    cld
     SAVE_REGISTERS
-    call clock_interrupt
-    RESTORE_REGISTERS
 
+    mov rbx, rsp
+    and rsp, -16
+    call clock_interrupt
+    mov rsp, rbx
+
+    RESTORE_REGISTERS
     iretq
+

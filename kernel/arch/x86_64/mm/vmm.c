@@ -138,6 +138,7 @@ uint64_t unmap_page(uint64_t virt_addr, uint64_t pml4_phys) {
     return phys_addr; 
 }
 
+/*
 // THIS IS A PROOF OF CONCEPT -- rewrite and implement buddy rather then simple bump
 static uint64_t next_virt = 0x1000;
 uint64_t valloc(bool zero) {
@@ -156,6 +157,35 @@ uint64_t valloc(bool zero) {
 
     return virt_addr;
 }
+
+uint64_t vallocs(bool zero, uint64_t count) {
+    if (count == 0)
+        return 0;
+    uint64_t pml4_phys_addr = read_cr3() & PTE_ADDR_MASK;
+    uint64_t start_virt = next_virt;
+
+    for (uint64_t i = 0; i < count; i++) {
+        uint64_t phys_addr = palloc();
+        if (!phys_addr) {
+            vfrees(start_virt, i);
+
+            return 0;
+        }
+
+        uint64_t virt_addr = start_virt + i * PAGE_SIZE;
+
+        map_page(phys_addr, virt_addr, pml4_phys_addr);
+
+        if (zero) {
+            memset((void *)virt_addr, 0, PAGE_SIZE);
+        }
+    }
+
+    next_virt += count * PAGE_SIZE;
+    return start_virt;
+}
+
+
 void vfree(uint64_t virt_addr) {
     uint64_t pml4_phys_addr = read_cr3() & PTE_ADDR_MASK;
     //uint64_t *pml4 = get_virt_addr(pml4_phys_addr); // unmap_page has a conversion
@@ -166,6 +196,87 @@ void vfree(uint64_t virt_addr) {
 
     return;
 }
+
+void vfrees(uint64_t virt_addr, uint64_t count) {
+    uint64_t pml4_phys_addr = read_cr3() & PTE_ADDR_MASK;
+    //uint64_t *pml4 = get_virt_addr(pml4_phys_addr); // unmap_page has a conversion
+
+    for (uint64_t i = 0; i < count; i++) {
+        uint64_t phys_addr = unmap_page(virt_addr, pml4_phys_addr);
+        if (phys_addr != 0)
+            pfree(phys_addr); // we can extract from pml4 (offset) ?
+        virt_addr += PAGE_SIZE;
+    }
+    return;
+}
+    */
+
+static uint64_t next_virt = KHEAP_BASE;
+
+uint64_t valloc(bool zero)
+{
+    return vallocs(zero, 1);
+}
+
+uint64_t vallocs(bool zero, uint64_t count)
+{
+    if (count == 0)
+        return 0;
+
+    uint64_t pml4 =
+        read_cr3() & PTE_ADDR_MASK;
+
+    uint64_t start = next_virt;
+
+    for (uint64_t i = 0; i < count; i++) {
+
+        uint64_t phys = palloc();
+
+        if (!phys) {
+            vfrees(start, i);
+            return 0;
+        }
+
+        uint64_t virt =
+            start + i * PAGE_SIZE;
+
+        map_page(phys, virt, pml4);
+
+        if (zero)
+            memset((void *)virt, 0, PAGE_SIZE);
+    }
+
+    next_virt += count * PAGE_SIZE;
+
+    return start;
+}
+
+void vfree(uint64_t virt_addr)
+{
+    vfrees(virt_addr, 1);
+}
+
+void vfrees(uint64_t virt_addr, uint64_t count)
+{
+    if (count == 0)
+        return;
+
+    uint64_t pml4 =
+        read_cr3() & PTE_ADDR_MASK;
+
+    for (uint64_t i = 0; i < count; i++) {
+
+        uint64_t virt =
+            virt_addr + i * PAGE_SIZE;
+
+        uint64_t phys =
+            unmap_page(virt, pml4);
+
+        if (phys)
+            pfree(phys);
+    }
+}
+
 /*
 Init vmm maps kernel, framebuffer to new addresses
 */
@@ -179,6 +290,35 @@ void map_range(uint64_t phys, uint64_t virt, uint64_t size, uint64_t pml4_phys) 
     for (uint64_t off = 0; off < mapped_size; off += PAGE_SIZE)
         map_page(phys_page + off, virt_page + off, pml4_phys);
 }
+
+// Required to identify APIC 
+// and map it as PTE_PWD | PTE_PCD (skip L3 cache)
+typedef enum {
+    EfiReservedMemoryType,
+    EfiLoaderCode,
+    EfiLoaderData,
+    EfiBootServicesCode,
+    EfiBootServicesData,
+    EfiRuntimeServicesCode,
+    EfiRuntimeServicesData,
+    EfiConventionalMemory, // OUR data
+    EfiUnusableMemory,
+    EfiACPIReclaimMemory,
+    EfiACPIMemoryNVS,
+    EfiMemoryMappedIO,
+    EfiMemoryMappedIOPortSpace,
+    EfiPalCode,
+    EfiPersistentMemory,
+    EfiMaxMemoryType
+} EFI_MEMORY_TYPE;
+
+typedef struct {
+   uint32_t    Type;
+   uint64_t    PhysicalStart;
+   uint64_t    VirtualStart;
+   uint64_t    NumberOfPages;
+   uint64_t    Attribute;
+} EFI_MEMORY_DESCRIPTOR;
 
 void init_vmm(BootInfo *boot) {
     print("[+] Starting init..\n");
@@ -209,6 +349,9 @@ void init_vmm(BootInfo *boot) {
     memset(pt,   0, PAGE_SIZE);
 
     print("[~] Table components:\n");
+
+    // MemoryMap is in boot->memorymap
+    // But how do we identify ACPI?
 
     pml4[0] =
         pdpt_phys |
@@ -262,6 +405,21 @@ void init_vmm(BootInfo *boot) {
 
     print("DONE\n");
 
+    // RIP
+    print("\t[~] Kernel RIP..");
+    uint64_t current_rip = read_rip();
+    uint64_t rip_page = current_rip & ~(PAGE_SIZE - 1);
+
+    // Map the current RIP and a few pages around it 1:1 
+    // so the CPU doesn't crash the moment CR3 changes.
+    map_range(
+        rip_page - PAGE_SIZE, 
+        rip_page - PAGE_SIZE, 
+        PAGE_SIZE * 10, 
+        pml4_phys
+    );
+    print("DONE\n");
+
     print("\t[~] Framebuffer..");
     // Map framebuffer
     map_range(boot->framebuffer_base, boot->framebuffer_base, boot->framebuffer_size, pml4_phys);
@@ -271,6 +429,38 @@ void init_vmm(BootInfo *boot) {
     // Map passthru
     map_range(0, PASSTHRU_BASE, max_physical_address, pml4_phys);
     print("DONE\n");
+
+    print("\t[~] APIC..");
+    // Loop thru Memory map and find APIC reserved mem chunks 
+    uint64_t entries = boot->memory_map_size / boot->memory_descriptor_size;
+    for(uint64_t i = 0; i < entries; i++) {
+        EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) (
+                (uint8_t*)boot->memory_map + i * boot->memory_descriptor_size );
+        if (desc->Type == EfiConventionalMemory) {
+            switch (desc->Type) {
+                case EfiConventionalMemory:
+                case EfiLoaderCode:
+                case EfiLoaderData:
+                case EfiBootServicesCode:
+                case EfiBootServicesData:
+                case EfiRuntimeServicesCode:
+                case EfiRuntimeServicesData:
+                case EfiACPIReclaimMemory:
+                    map_range(desc->PhysicalStart, desc->PhysicalStart, desc->NumberOfPages * PAGE_SIZE, pml4_phys);
+                    break;
+                case EfiACPIMemoryNVS:
+                    map_range(desc->PhysicalStart, desc->PhysicalStart, desc->NumberOfPages * PAGE_SIZE, pml4_phys);
+                    break;
+            }
+        }
+    }
+    // Can not forget about APIC MMIO (~4kilobytes in size)
+    uint64_t apic_record = rdmsr(0x1B);
+    uint64_t apic_page = (apic_record >> 12) & 0xFFFFFULL;
+    uint64_t apic_base = apic_page << 12;
+    map_range(apic_base, apic_base, 0x4000, pml4_phys);
+
+    print("OK\n");
 
     print("\t[~] Other..");
     // BootInfo

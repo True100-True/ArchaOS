@@ -17,6 +17,8 @@ KernelHeader header = {
 #include "errs/pnc.h"
 #include "lib/stdio.h"
 
+#include "kernel_apps/demo.h"
+
 /*
 typedef struct {
     uint64_t magic;
@@ -113,8 +115,14 @@ void kernel_main(BootInfo *boot) {
 
     // Arch depented code following !!!'
     // Both of these are located in "kcode/arch.h" that chooses arch and picks the right folder
-    init_cpu();        // The stuff like GDT, IDT, TSS, etc so CPU
+    init_primitivs();  // The CPU requires bootstraping (requires memory) (copy of init_cpu but modified to fit bootstrap)
+    asm("cli");
     init_memory(boot); // Similar to above, but PMM, VMM, HMM, etc. (because of cr3 and MMU)
+    asm("sti");
+    init_cpu();        // The stuff like GDT, IDT, TSS, etc so CPU
+    //print("Skipping init_memory...");
+
+    kmalloc_init();
 
     print("\n\n");
 
@@ -122,18 +130,32 @@ void kernel_main(BootInfo *boot) {
     print("Total usable memory: %n MB\n\n", total_usable_memory / (1024*1024));
 
     print("Kernel physical addr: %lx \n", boot->kernel_physical_address);
-    print("Kernel virtual  addr: %lx \n\n", boot->kernel_virtual_address);
+    print("Kernel virtual  addr: %lx \n", boot->kernel_virtual_address);
+    print("Kernel kernel_main  : %lx \n\n", (uint64_t)kernel_main);
+
+    print("Framebuffer info\n");
+    print("\taddress: %lx \n", (uint64_t)framebuffer_pb->address);
+    print("\twidth:   %lx \n", (uint64_t)framebuffer_pb->width);
+    print("\theight:  %lx \n", (uint64_t)framebuffer_pb->height);
+    print("\tpitch:   %lx \n\n", (uint64_t)framebuffer_pb->pitch);
 
     print("All done.\n");
 
+    start_clock(); // CRASHES for no reason at all
+
     print("Time: %n \n", get_ticks());
-
-    /*
     while (!(get_ticks() >= 200)) {
-        print("Time: %n \n", get_ticks());
+        print("Time: %n \r", get_ticks());
     }
-    */
+    
 
+    // Demo !!! -- A show off until I can make all of it
+    // Clear
+    print("Starting demo...\n");
+    // buffer (framebuffer_t) source x,y destionation x,y color
+    //fill_rect(1,1, framebuffer_pb->width,framebuffer_pb->height, 0x00102030);
+    start_demo_show(boot->framebuffer_size);
+    
     while (1)
         asm("hlt");
 }

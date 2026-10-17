@@ -1,6 +1,6 @@
 #include "idt.h"
 
-void idt_set_gate(struct idt_entry idt[256], uint8_t vector, void (*handler)(void)) {
+void idt_set_gate(uint8_t vector, void (*handler)(void)) {
     uint64_t addr = (uint64_t)handler;
     idt[vector].offset_low =
         addr & 0xFFFF;

@@ -18,3 +18,9 @@ TODO:
 - finish APIC
 
 (Had a break because of some issues)
+
+
+
+//// FIX THE ERROR WITH ACPI CRASHING OUT 
+//// BC of the apic memory bug
+//// (ACPI MMIO is mapped without proper flags, only ends up in cache)

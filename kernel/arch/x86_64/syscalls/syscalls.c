@@ -73,7 +73,8 @@ bool init_syscalls() {
 }
 
 void syscall_dispatch(void) {
-    print("Called syscall!!");
+    print("Called syscall!!"); // extremly ahh
+    
     return;
 }
 

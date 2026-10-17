@@ -1,16 +1,27 @@
 #include "clock.h"
 
-uint64_t ticks_from_boot = 0;
+uint64_t total_ticks = 0;
 
 void clock_interrupt(void) {
-    ++ticks_from_boot;
-    pic_acknowledge(0); // Change to support APIC aswell
+    ++total_ticks;
+    apic_eoi();
 }
 
 uint64_t get_ticks() {
-    return ticks_from_boot;
+    return total_ticks;
 }
 
 uint64_t get_milliseconds(void) {
     return (get_ticks() * 1000) / 100;
+}
+
+void timer_reset(void) {
+    total_ticks = 0;
+}
+
+void start_clock() {
+    apic_timer_start();
+}
+void stop_clock() {
+    apic_timer_stop();
 }

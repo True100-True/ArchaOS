@@ -12,7 +12,8 @@ uint64_t cursor_y = 0;
 // This is the default font build into the kernel
 // cozzete, cool font
 // 
-#include "../../common/fonts/cozette.h"
+//#include "../../common/fonts/cozette.h"
+#include "../graphics/font/font.h"
 
 static const char hex_chars[] =
     "0123456789ABCDEF";
@@ -69,7 +70,7 @@ void serial_print_hex(uint64_t value)
     serial_putchar('\n');
 }
 
-static cozette_data current_font;
+
 
 // VERY good low-copy print functions 
 // There is string normalization, everything 
@@ -79,113 +80,10 @@ static cozette_data current_font;
 void print_init() { // , cozette_data *font
     if (graphics_init != true)
         return;
-    current_font = load_glyphs();
+    term_init();
 }
 
-void putchar(char c)
-{
-    serial_putchar(c); // inject into the output system to capture os output
-    if (framebuffer_pb == NULL)
-        return;
-
-    if (c == '\r') {
-        cursor_x = 0;
-        return;
-    }
-
-    if (c == '\n') {
-        cursor_x = 0;
-        cursor_y += current_font.height;
-
-        if (cursor_y + current_font.height > framebuffer_pb->height)
-            cursor_y = 0;
-
-        return;
-    }
-
-    if (c == '\b') {
-        if (cursor_x >= current_font.width) {
-            cursor_x -= current_font.width;
-        } else {
-            cursor_x = 0;
-        }
-
-        /* Erase previous character */
-        for (uint32_t row = 0;
-             row < current_font.height;
-             row++)
-        {
-            for (uint32_t col = 0;
-                 col < current_font.width;
-                 col++)
-            {
-                put_pixel(
-                    cursor_x + col,
-                    cursor_y + row,
-                    0x00000000
-                );
-            }
-        }
-
-        return;
-    }
-
-    if (c == '\t') {
-        cursor_x += current_font.width * 4;
-        
-        if (cursor_x + current_font.width > framebuffer_pb->width) {
-            cursor_x = 0;
-            cursor_y += current_font.height;
-        }
-
-        return;
-    }
-
-    uint32_t index = (uint8_t)c;
-
-    if (index >= current_font.glyph_count)
-        return;
-
-    uint8_t *glyph =
-        current_font.glyphs +
-        index * current_font.glyphsize;
-
-    uint32_t bytes =
-        (current_font.width + 7) / 8;
-
-    for (uint32_t row = 0;
-         row < current_font.height;
-         row++)
-    {
-        for (uint32_t col = 0;
-             col < current_font.width;
-             col++)
-        {
-            uint8_t byte =
-                glyph[row * bytes + col / 8];
-
-            if (byte & (0x80 >> (col % 8)))
-            {
-                put_pixel(
-                    cursor_x + col,
-                    cursor_y + row,
-                    0xffffffff
-                );
-            }
-        }
-    }
-
-    cursor_x += current_font.width;
-
-    if (cursor_x + current_font.width > framebuffer_pb->width) {
-        cursor_x = 0;
-        cursor_y += current_font.height;
-    }
-
-    if (cursor_y + current_font.height > framebuffer_pb->height) {
-        cursor_y = 0;
-    }
-}
+/*
 static void print_uint(unsigned int value) {
     if (value >= 10)
         print_uint(value / 10);
@@ -239,6 +137,7 @@ static void print_u64_hex(uint64_t value) {
         );
     }
 }
+
 void print(const char *format, ...) {
     if(framebuffer_pb == NULL)
         return;
@@ -300,6 +199,131 @@ void print(const char *format, ...) {
     }
     va_end(args);
 }
+*/
+
+static void print_uint(unsigned int value) {
+    if (value >= 10)
+        print_uint(value / 10);
+
+    Putchar('0' + (value % 10), 0xffffffff, 0x00102030, current_font);
+}
+static void print_int(int value) {
+    if (value < 0) {
+        Putchar('-', 0xffffffff, 0x00102030, current_font);
+        unsigned int n = 0u - (unsigned int)value;
+        print_uint(n);
+    } else {
+        print_uint((unsigned int)value);
+    }
+}
+static void print_hex(unsigned int value) {
+    Putchar('0', 0xffffffff, 0x00102030, current_font);
+    Putchar('x', 0xffffffff, 0x00102030, current_font);
+    for (int i = 7; i >= 0; i--) {
+        Putchar(
+            hex_chars[(value >> (i * 4)) & 0xF],
+            0xffffffff, 0x00102030, current_font
+        );
+    }
+}
+static void print_char(const char* to_print ) {
+    while (*to_print) {
+        Putchar(*to_print, 0xffffffff, 0x00102030, current_font);
+        to_print++;
+    }
+}
+static void print_u64(uint64_t value) { 
+    char buf[20]; 
+    int i = 0; 
+    if (value == 0) { 
+        Putchar('0', 0xffffffff, 0x00102030, current_font); 
+        return; 
+    } 
+    while (value) { 
+        buf[i++] = '0' + (value % 10); 
+        value /= 10; 
+    } 
+    while (i--) 
+    Putchar(buf[i], 0xffffffff, 0x00102030, current_font); 
+}
+static void print_u64_hex(uint64_t value) {
+    Putchar('0', 0xffffffff, 0x00102030, current_font);
+    Putchar('x', 0xffffffff, 0x00102030, current_font);
+    for (int i = 15; i >= 0; i--) {
+        Putchar(
+            hex_chars[(value >> (i * 4)) & 0xF],
+            0xffffffff, 0x00102030, current_font
+        );
+    }
+}
+
+// You may read my code and ask youself
+// why the fuck does he make a putchar function
+// that can print colorfully just to blind it with fake values?
+// this is a demo of the stdio.h its experimental
+// after a while I will try to somehow make this work with ansii codes 
+void print(const char *format, ...) {
+    if(framebuffer_pb == NULL)
+        return;
+    va_list args;
+    va_start(args, format);
+
+    while(*format) {
+        if (*format != '%') {
+            Putchar(*format, 0xffffffff, 0x00102030, current_font); // default background and foreground
+            format++;
+            continue;
+        }
+
+        format++;
+
+        if (!*format)
+            break;
+
+        switch (*format) {
+            case 'd': {
+                int value = va_arg(args, int);
+                print_int(value);
+                break;
+            } case 'u': {
+                unsigned int value = va_arg(args, unsigned int);
+                print_uint(value);
+                break;
+            } case 'n': { 
+                uint64_t value = va_arg(args, uint64_t);
+                print_u64(value);
+                break;
+            } case 's': {
+                const char *value = va_arg(args, const char *);
+                print_char(value); 
+                break;
+            } case 'x': {
+                int value = va_arg(args, int);
+                print_hex(value);
+                break;
+            } case 'l': {
+                if (format[1] == 'x') {
+                    uint64_t value = va_arg(args, uint64_t);
+                    print_u64_hex(value);
+                    format += 2;
+                } else {
+                    Putchar('%', 0xffffffff, 0x00102030, current_font);
+                    Putchar('l', 0xffffffff, 0x00102030, current_font);
+                    format++;
+                }
+                break;
+            } case '%': break;
+            default:
+                Putchar('%', 0xffffffff, 0x00102030, current_font);
+                Putchar(*format, 0xffffffff, 0x00102030, current_font);
+                format += 2;
+                continue; // idk how this behaves in switch (skips while OR switch)
+        }
+        format++;
+    }
+    va_end(args);
+}
+
 
 // NOT kernel friendly, requires TON of allocation
 // kernel shouldn't take too much ram aswell

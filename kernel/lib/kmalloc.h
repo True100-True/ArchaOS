@@ -2,10 +2,18 @@
 #define KMALLOC_H
 
 #include "stdio.h"
+#include "../kcode/arch.h"
 
-void kmalloc_init(char *start, int length);
+#include <stdint.h>
+#include "stdio.h"
+#include "string.h"
+#include "stdbool.h"
 
-void *kmalloc(int length);
+// basic kmalloc
+
+void kmalloc_init(void);
+
+void *kmalloc(uint64_t size);
 void kfree(void *ptr);
 
 #endif

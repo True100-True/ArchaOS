@@ -5,12 +5,12 @@ CFLAGS= \
     -O2 \
     -ffreestanding \
     -mno-red-zone \
-    -mno-sse \
     -mno-sse2 \
     -nostdlib \
     -fno-omit-frame-pointer \
     -Wall \
     -Wextra
+#-mno-sse \
 
 LDFLAGS=-T linker.ld
 

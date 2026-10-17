@@ -16,4 +16,6 @@ void init_tss() {
     tss.ist7 = 0;
 
     tss.iomap_base = sizeof(tss);
+
+    //load_tss(tss);
 }

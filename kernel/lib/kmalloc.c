@@ -1,234 +1,299 @@
-/*
-Copyright (C) 2016-2019 The University of Notre Dame
-This software is distributed under the GNU General Public License.
-See the file LICENSE for details.
-*/
-
 #include "kmalloc.h"
-//#include "memorylayout.h"
 
-#define KUNIT sizeof(struct kmalloc_chunk)
+// AI !!! AI !!! AI !!!
+// TODO: Remove this shit 
 
-#define KMALLOC_STATE_FREE 0xa1a1a1a1
-#define KMALLOC_STATE_USED 0xbfbfbfbf
+#define KMALLOC_STATE_FREE 0xA1A1A1A1
+#define KMALLOC_STATE_USED 0xBFBFBFBF
 
-struct kmalloc_chunk {
-	int state;
-	int length;
-	struct kmalloc_chunk *next;
-	struct kmalloc_chunk *prev;
-};
+#define KMALLOC_ALIGNMENT 16
+#define KMALLOC_MIN_SPLIT 32
 
-static struct kmalloc_chunk *head = 0;
+typedef struct kmalloc_chunk {
+    uint64_t state;
+    uint64_t length;              // Includes this header.
+    struct kmalloc_chunk *next;
+    struct kmalloc_chunk *prev;
+} kmalloc_chunk_t;
 
-/*
-Initialize the linked list by creating a single chunk at
-a given start address and length.  The chunk is initially
-free and has no next or previous chunks.
-*/
+static kmalloc_chunk_t *head = NULL;
 
-void kmalloc_init(char *start, int length)
+static uint64_t heap_start = 0;
+static uint64_t heap_end = 0;
+
+
+static uint64_t align_up(uint64_t value, uint64_t alignment)
 {
-	head = (struct kmalloc_chunk *) start;
-	head->state = KMALLOC_STATE_FREE;
-	head->length = length;
-	head->next = 0;
-	head->prev = 0;
+    return (value + alignment - 1) &
+           ~(alignment - 1);
 }
 
-/*
-Split a large chunk into two, such that the current chunk
-has the desired length, and the next chunk has the remainder.
-*/
 
-static void ksplit(struct kmalloc_chunk *c, int length)
+void kmalloc_init(void)
 {
-	struct kmalloc_chunk *n = (struct kmalloc_chunk *) ((char *) c + length);
-
-	n->state = KMALLOC_STATE_FREE;
-	n->length = c->length - length;
-	n->prev = c;
-	n->next = c->next;
-
-	if(c->next)
-		c->next->prev = n;
-
-	c->next = n;
-	c->length = length;
+    head = NULL;
+    heap_start = 0;
+    heap_end = 0;
 }
 
-/*
-Allocate a chunk of memory of the given length.
-To avoid fragmentation, round up the length to
-a multiple of the chunk size.  Then, search fo
-a chunk of the desired size, and split it if necessary.
-*/
 
-void *kmalloc(int length)
+static void kmerge_next(kmalloc_chunk_t *chunk)
 {
-	// round up length to a multiple of KUNIT
-	int extra = length % KUNIT;
-	if(extra)
-		length += (KUNIT - extra);
+    if (!chunk)
+        return;
 
-	// then add one more unit to accommodate the chunk header
-	length += KUNIT;
+    if (chunk->state != KMALLOC_STATE_FREE)
+        return;
 
-	struct kmalloc_chunk *c = head;
+    kmalloc_chunk_t *next = chunk->next;
 
-	while(1) {
-		if(!c) {
-			print("kmalloc: out of memory!\n");
-			return 0;
-		}
-		if(c->state == KMALLOC_STATE_FREE && c->length >= length)
-			break;
-		c = c->next;
-	}
+    if (!next)
+        return;
 
-	// split the chunk if the remainder is greater than two units
-	if((c->length-length) > 2 * KUNIT) {
-		ksplit(c, length);
-	}
+    if (next->state != KMALLOC_STATE_FREE)
+        return;
 
-	c->state = KMALLOC_STATE_USED;
+    chunk->length += next->length;
+    chunk->next = next->next;
 
-	// return a pointer to the memory following the chunk header
-	return (c + 1);
+    if (chunk->next)
+        chunk->next->prev = chunk;
 }
 
-/*
-Attempt to merge a chunk with its successor,
-if it exists and both are in the free state.
-*/
 
-static void kmerge(struct kmalloc_chunk *c)
+static bool kmalloc_grow(uint64_t size)
 {
-	if(!c)
-		return;
+    uint64_t bytes = align_up(size, PAGE_SIZE);
+    uint64_t pages = bytes / PAGE_SIZE;
 
-	if(c->state != KMALLOC_STATE_FREE)
-		return;
+    uint64_t address = vallocs(true, pages);
 
-	if(c->next && c->next->state == KMALLOC_STATE_FREE) {
-		c->length += c->next->length;
-		if(c->next->next) {
-			c->next->next->prev = c;
-		}
-		c->next = c->next->next;
-	}
+    if (address == 0) {
+        print("kmalloc: vallocs failed\n");
+        return false;
+    }
 
+    /*
+     * First heap allocation.
+     */
+    if (head == NULL) {
+
+        heap_start = address;
+        heap_end = address + bytes;
+
+        head = (kmalloc_chunk_t *)address;
+
+        head->state = KMALLOC_STATE_FREE;
+        head->length = bytes;
+        head->next = NULL;
+        head->prev = NULL;
+
+        return true;
+    }
+
+
+    /*
+     * The VMM must give us the page range directly
+     * after the current heap.
+     */
+    if (address != heap_end) {
+
+        print("kmalloc: vallocs returned non-contiguous memory\n");
+        print("requested: %lx\n", address);
+        print("expected:  %lx\n", heap_end);
+
+        vfrees(address, pages);
+
+        return false;
+    }
+
+
+    /*
+     * Find last chunk.
+     */
+    kmalloc_chunk_t *last = head;
+
+    while (last->next)
+        last = last->next;
+
+
+    /*
+     * New free chunk starts at the newly allocated pages.
+     */
+    kmalloc_chunk_t *new_chunk =
+        (kmalloc_chunk_t *)address;
+
+    new_chunk->state = KMALLOC_STATE_FREE;
+    new_chunk->length = bytes;
+    new_chunk->next = NULL;
+    new_chunk->prev = last;
+
+    last->next = new_chunk;
+
+    heap_end += bytes;
+
+
+    /*
+     * If the old last chunk was free, merge.
+     */
+    if (last->state == KMALLOC_STATE_FREE)
+        kmerge_next(last);
+
+    return true;
 }
 
-/*
-Free memory by marking the chunk as de-allocated,
-then attempting to merge it with the predecessor and successor.
-*/
+
+static void ksplit(kmalloc_chunk_t *chunk,
+                    uint64_t length)
+{
+    kmalloc_chunk_t *new_chunk =
+        (kmalloc_chunk_t *)(
+            (uint8_t *)chunk + length
+        );
+
+    new_chunk->state = KMALLOC_STATE_FREE;
+
+    new_chunk->length =
+        chunk->length - length;
+
+    new_chunk->prev = chunk;
+    new_chunk->next = chunk->next;
+
+    if (chunk->next)
+        chunk->next->prev = new_chunk;
+
+    chunk->next = new_chunk;
+
+    chunk->length = length;
+}
+
+
+void *kmalloc(uint64_t size)
+{
+    if (size == 0)
+        return NULL;
+
+
+    /*
+     * Round requested data size up.
+     */
+    size = align_up(size, KMALLOC_ALIGNMENT);
+
+
+    /*
+     * Include allocator header.
+     */
+    uint64_t required =
+        size + sizeof(kmalloc_chunk_t);
+
+
+    /*
+     * Search existing free chunks.
+     */
+    kmalloc_chunk_t *chunk = head;
+
+    while (chunk) {
+
+        if (chunk->state == KMALLOC_STATE_FREE &&
+            chunk->length >= required)
+            break;
+
+        chunk = chunk->next;
+    }
+
+
+    /*
+     * No suitable chunk.
+     */
+    if (!chunk) {
+
+        uint64_t grow_size = required;
+
+        /*
+         * Grow by at least 16 pages.
+         */
+        if (grow_size < 16 * PAGE_SIZE)
+            grow_size = 16 * PAGE_SIZE;
+
+        if (!kmalloc_grow(grow_size))
+            return NULL;
+
+
+        /*
+         * Search again.
+         */
+        chunk = head;
+
+        while (chunk) {
+
+            if (chunk->state == KMALLOC_STATE_FREE &&
+                chunk->length >= required)
+                break;
+
+            chunk = chunk->next;
+        }
+
+
+        if (!chunk) {
+            print("kmalloc: no chunk after grow\n");
+            return NULL;
+        }
+    }
+
+
+    /*
+     * Split if enough space remains.
+     */
+    if (chunk->length >=
+        required +
+        sizeof(kmalloc_chunk_t) +
+        KMALLOC_MIN_SPLIT) {
+
+        ksplit(chunk, required);
+    }
+
+
+    chunk->state = KMALLOC_STATE_USED;
+
+
+    /*
+     * Return memory immediately following header.
+     */
+    return (void *)(chunk + 1);
+}
+
 
 void kfree(void *ptr)
 {
-	struct kmalloc_chunk *c = (struct kmalloc_chunk *) ptr;
-	c--;
+    if (!ptr)
+        return;
 
-	if(c->state != KMALLOC_STATE_USED) {
-		print("invalid kfree(%lx)\n", (uint64_t)ptr);
-		return;
-	}
 
-	c->state = KMALLOC_STATE_FREE;
+    kmalloc_chunk_t *chunk =
+        ((kmalloc_chunk_t *)ptr) - 1;
 
-	kmerge(c);
-	kmerge(c->prev);
+
+    if (chunk->state != KMALLOC_STATE_USED) {
+
+        print("kmalloc: invalid free: %lx\n",
+              (uint64_t)ptr);
+
+        return;
+    }
+
+
+    chunk->state = KMALLOC_STATE_FREE;
+
+
+    /*
+     * Merge with previous first.
+     */
+    if (chunk->prev)
+        kmerge_next(chunk->prev);
+
+
+    /*
+     * Then merge with next.
+     */
+    kmerge_next(chunk);
 }
-
-/*
-
-// Debug
-
-void kmalloc_debug()
-{
-	struct kmalloc_chunk *c;
-
-	printf("state ptr      prev     next     length\n");
-
-	for(c = head; c; c = c->next) {
-		if(c->state == KMALLOC_STATE_FREE) {
-			printf("F");
-		} else if(c->state == KMALLOC_STATE_USED) {
-			printf("U");
-		} else {
-			printf("kmalloc list corrupted at %x!\n", c);
-			return;
-		}
-		printf("     %x %x %x %d\n", c, c->prev, c->next, c->length);
-	}
-}
-
-*/
-
-// Testing
-
-/*
-
-// We neccessarly don't need testing functions right now
-
-static void setup(void)
-{
-	kmalloc_init((char *) KMALLOC_START, KMALLOC_LENGTH);
-}
-
-static void tear_down(void)
-{
-}
-
-static int kmalloc_test_single_alloc(void)
-{
-	char *ptr = kmalloc(128);
-	struct kmalloc_chunk *next = 0;
-	int res = (unsigned long) ptr == (unsigned long) head + sizeof(struct kmalloc_chunk);
-	res &= head->state == KMALLOC_STATE_USED;
-	res &= head->length == 128 + sizeof(struct kmalloc_chunk);
-	res &= (char *) head->next == (char *) KMALLOC_START + head->length;
-	next = head->next;
-	res &= next->state == KMALLOC_STATE_FREE;
-	res &= next->length == KMALLOC_LENGTH - head->length;
-
-	return res;
-}
-
-static int kmalloc_test_single_alloc_and_free(void)
-{
-	char *ptr = kmalloc(128);
-	int res;
-	kfree(ptr);
-	res = head->state == KMALLOC_STATE_FREE;
-	res &= head->next == 0;
-	res &= head->length == KMALLOC_LENGTH;
-
-	return res;
-}
-
-int kmalloc_test(void)
-{
-	int (*tests[]) (void) = {
-	kmalloc_test_single_alloc, kmalloc_test_single_alloc_and_free,};
-
-	int i = 0;
-	for(i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
-		printf("running test %d...", i);
-		int res;
-
-		setup();
-		res = tests[i] ();
-		tear_down();
-
-		if(!res) {
-			printf("failed\n");
-			printf("\ntest %d failed.\n");
-			return 0;
-		}
-		printf("succeeded\n");
-	}
-	return 1;
-}
-*/

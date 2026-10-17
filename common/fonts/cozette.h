@@ -7,7 +7,6 @@
 
 #define PSF2_MAGIC 0x864AB572
 
-
 typedef struct {
 
     uint32_t magic;

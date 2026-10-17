@@ -22,8 +22,9 @@ struct idt_ptr {
     uint64_t base;
 } __attribute__((packed));
 
+static struct idt_entry idt[256];
 
-void idt_set_gate(struct idt_entry idt[256], uint8_t vector, void (*handler)(void));
+void idt_set_gate(uint8_t vector, void (*handler)(void));
 extern void load_idt(uint16_t size, uint64_t base);
 
 //void init_idt();

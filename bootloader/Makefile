@@ -18,10 +18,7 @@ $(TARGET): $(SOURCE)
 $(DISK): $(TARGET) $(KERNEL)
 	rm -f $@
 
-	# Create empty disk
 	truncate -s $(DISK_SIZE) $@
-
-	# Create GPT and one EFI System Partition
 	sgdisk \
 		--clear \
 		--new=1:2048:0 \
@@ -29,13 +26,9 @@ $(DISK): $(TARGET) $(KERNEL)
 		--change-name=1:EFI \
 		$@
 
-	# Format partition 1 as FAT32
 	mkfs.fat -F32 -n EFI --offset=2048 $@
-	
 	mmd -i img.img@@1M ::/EFI
 	mmd -i img.img@@1M ::/EFI/BOOT
-
-	# Copy files into the FAT filesystem without mounting
 	mcopy -i $@@@1M -s $(TARGET) ::/EFI/BOOT/BOOTX64.EFI
 	mcopy -i $@@@1M $(KERNEL) ::/kernel.elf
 
@@ -44,7 +37,7 @@ run: $(DISK)
 	qemu-system-x86_64 \
 		-machine q35 \
 		-m 512M \
-		-cpu qemu64 \
+		-cpu qemu64,+sse,+sse2 \
 		-bios /usr/share/ovmf/x64/OVMF.4m.fd \
 		-drive file=$(DISK),format=raw \
 		-net none \
@@ -56,7 +49,7 @@ debug: $(DISK)
 		-machine q35 \
 		-m 512M \
 		-cpu qemu64 \
-		-bios /usr/share/ovmf/OVMF.fd \
+		-bios /usr/share/ovmf/x64/OVMF.4m.fd \
 		-drive file=$(DISK),format=raw \
 		-net none \
 		-serial stdio \
