@@ -108,14 +108,36 @@ void local_apic_init(uintptr_t apic_addr, bool enabled) {
     apic_write_reg(apic_addr, APIC_DIVIDE, 0xB); // divide by 1
     idt_set_gate(32, tick_interrupt);
 }
-
+/*
 void apic_timer_start(void) {
+    apic_write_reg(apic_addr, APIC_INIT_COUNT, 10000000);
     uint32_t timer = apic_read_reg(apic_addr, APIC_LVT_TIMER);
     // unmask 16 to start clock
     timer &= ~(1u << 16);
     apic_write_reg(apic_addr, APIC_LVT_TIMER, timer);
-    
+
 }
+*/
+
+void apic_timer_start(void) {
+    // Mask timer while configuring.
+    uint32_t lvt = apic_read_reg(apic_addr, APIC_LVT_TIMER);
+    lvt |= 1u << 16;
+    lvt |= 1u << 17; // periodic mode
+    lvt = (lvt & ~0xFFu) | 32u;
+    apic_write_reg(apic_addr, APIC_LVT_TIMER, lvt);
+
+    // Configure timer divide value.
+    apic_write_reg(apic_addr, APIC_TIMER_DIVIDE, 0xB);
+
+    // Set a nonzero initial count.
+    apic_write_reg(apic_addr, APIC_TIMER_INITIAL_COUNT, 10000000);
+
+    // Ensure IDT vector 32 is installed and loaded before unmasking.
+    lvt &= ~(1u << 16);
+    apic_write_reg(apic_addr, APIC_LVT_TIMER, lvt);
+}
+
 void apic_timer_stop(void) {
     uint32_t timer = apic_read_reg(apic_addr, APIC_LVT_TIMER);
     // unmask 16 to stop clock

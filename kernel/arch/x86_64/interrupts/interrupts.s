@@ -83,5 +83,4 @@ spurious_int_handler:
     SAVE_REGISTERS
     /*!!! add the spurius function !!!*/
     RESTORE_REGISTERS
-    add $8, %rsp
     iretq

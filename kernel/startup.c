@@ -52,7 +52,7 @@ void kernel_main(BootInfo *boot) {
     serial_putchar('L');
     */
 
-    const char *kernel_version = "CORE 0.1.2"; 
+    const char *kernel_version = "CORE 0.1.3"; 
 
     serial_init();
 
@@ -141,11 +141,11 @@ void kernel_main(BootInfo *boot) {
 
     print("All done.\n");
 
-    start_clock(); // CRASHES for no reason at all
+    start_clock();
 
-    print("Time: %n \n", get_ticks());
-    while (!(get_ticks() >= 200)) {
-        print("Time: %n \r", get_ticks());
+    print("Ticks: %u \r", get_ticks());
+    while (get_ticks() != 200) {
+        print("Ticks: %u \r", get_ticks());
     }
     
 

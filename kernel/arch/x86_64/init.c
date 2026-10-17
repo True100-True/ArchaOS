@@ -108,7 +108,7 @@ void init_cpu() {
     bool support_x2apic = (cres.ecx & (1 << 21)) != 0;
 
     // Initialize PIT as of APIC needs
-    pic_init(20, 28);
+    pic_init(0x20, 0x28);
     
     // PIT aswell for APIC
     pic_enable(1);
