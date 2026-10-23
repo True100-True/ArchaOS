@@ -22,6 +22,7 @@ static const char hex_chars[] =
 // DO NOT RUN on real HW with these enabled
 // It can breake output or even damage something
 // either way it is dangerous !!!
+#if defined(QEMU_TEST) && QEMU_TEST == 1
 void serial_init()
 {
     outb(0x00, 0x3F9); // Disable interrupts
@@ -70,7 +71,29 @@ void serial_print_hex(uint64_t value)
     serial_putchar('\n');
 }
 
-
+void serial_print_dec(uint64_t N)
+{
+    char str[22]; // -18446744073709551615\n
+    int i = 0;
+    int sign = N;
+    if (N < 0)
+        N = -N;
+    while (N > 0) {
+        str[i++] = N % 10 + '0';
+      	N /= 10;
+    } 
+    if (sign < 0) {
+        str[i++] = '-';
+    }
+    str[i] = '\0';
+    for (int j = 0, k = i - 1; j < k; j++, k--) {
+        char temp = str[j];
+        str[j] = str[k];
+        str[k] = temp;
+    }
+    serial_print(str);
+}
+#endif
 
 // VERY good low-copy print functions 
 // There is string normalization, everything 

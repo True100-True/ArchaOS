@@ -1,24 +1,21 @@
 Oct. 1 2026
-- Finished memory (mm)
-- Fixed makefile
-- Removed sudo hungry code in makefile
-- Updated readme
-- Added version tracking for bootloader
-- Expanded x86_64 arch code
+- Updated README (started some kernel documentation)
+- Fixed interrupts
+- Fixed clock and APIC
+- Some graphics library is done
+- Removed some of borrowed code
+- fixed valloc, palloc 
+- finish some stuff around APIC
 
 TODO:
 - Start working on PLAYGROUND
 - Document kernel's desired architecture
 - Finish process in x86_64 architecture
-- Start working on graphics library
-- Finish kernel panic
 - Add modes
-- remove borrowed code
-- fix valloc, palloc 
-- finish APIC
+- Fix the on HW APIC MMIO bug
 
-(Had a break because of some issues)
-
+(Break aswell)
+(need hardware to test on)
 
 
 //// FIX THE ERROR WITH ACPI CRASHING OUT 

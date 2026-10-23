@@ -7,19 +7,22 @@ CFLAGS = -ffreestanding -fshort-wchar -mno-red-zone -nostdlib \
 TARGET = BOOTX64.EFI
 KERNEL = ../kernel/kernel.elf
 SOURCE = uefi.c
-DISK = img.img
-DISK_SIZE = 260M
+BOOT_DISK = img.img
+BOOT_DISK_SIZE = 260M
+
+RAMDISK = ../test_disk/ramdisk.cpio
+RAMDISK_folder = ../common/initramfs/
 
 all: $(TARGET)
 
 $(TARGET): $(SOURCE)
 	$(CC) $(CFLAGS) -o $@ $<
 
-$(DISK): $(TARGET) $(KERNEL)
+$(BOOT_DISK): $(TARGET) $(KERNEL) $(RAMDISK)
 	rm -f $@
 
-	truncate -s $(DISK_SIZE) $@
-	sgdisk \
+	truncate -s $(BOOT_DISK_SIZE) $@
+	sgdisk $(BOOT_DISK) \
 		--clear \
 		--new=1:2048:0 \
 		--typecode=1:ef00 \
@@ -31,26 +34,35 @@ $(DISK): $(TARGET) $(KERNEL)
 	mmd -i img.img@@1M ::/EFI/BOOT
 	mcopy -i $@@@1M -s $(TARGET) ::/EFI/BOOT/BOOTX64.EFI
 	mcopy -i $@@@1M $(KERNEL) ::/kernel.elf
+	mcopy -i $@@@1M $(RAMDISK) ::/ramdiskfs.cpio
+
+$(RAMDISK): $(RAMDISK_folder)
+	mkdir -p "$(dir $(abspath $@))"
+	cd "$(RAMDISK_folder)" && find . -print0 | cpio --null -o --format=newc > "$(abspath $@)"
+
+$(RAMDISK_folder):
+	mkdir -p "$(RAMDISK_folder)/binit" "$(RAMDISK_folder)/adam"
+	cp ../drivers/ready "$(RAMDISK_folder)/binit/"
 
 
-run: $(DISK)
+run: $(BOOT_DISK)
 	qemu-system-x86_64 \
-		-machine q35 \
-		-m 512M \
+		-machine pc \
+		-m 1024M \
 		-cpu qemu64,+sse,+sse2 \
 		-bios /usr/share/ovmf/x64/OVMF.4m.fd \
-		-drive file=$(DISK),format=raw \
+		-drive file=$(BOOT_DISK),format=raw \
 		-net none \
 		-serial stdio \
 		-device virtio-gpu \
 		-display gtk 
-debug: $(DISK)
+debug: $(BOOT_DISK)
 		qemu-system-x86_64 \
 		-machine q35 \
 		-m 512M \
 		-cpu qemu64 \
 		-bios /usr/share/ovmf/x64/OVMF.4m.fd \
-		-drive file=$(DISK),format=raw \
+		-drive file=$(BOOT_DISK),format=raw \
 		-net none \
 		-serial stdio \
 		-device virtio-gpu \
@@ -63,6 +75,6 @@ debug: $(DISK)
 
 
 clean:
-	rm -f $(TARGET) $(DISK)
+	rm -f $(TARGET) $(BOOT_DISK)
 
 .PHONY: all run clean

@@ -1,21 +1,47 @@
 #include "string.h"
 
+typedef uint64_t unaligned_u64
+    __attribute__((may_alias, aligned(1)));
+
+// Minor optimalization 
 void *memcpy(void *dest, const void *src, size_t n) {
+#if (!defined(X86_64) || X86_64 == 1) && QEMU_TEST == 0
+    __asm__ volatile (
+        "cld\n\t"
+        "rep movsb"
+        : "+D"(dest), "+S"(src), "+c"(n)
+        :
+        : "memory"
+    );
+    return dest;
+#else
+    void *ret = dest;
     unsigned char *d = dest;
     const unsigned char *s = src;
 
-    while (n >= sizeof(size_t)) {
-        *(size_t *)d = *(const size_t *)s;
-        d += sizeof(size_t);
-        s += sizeof(size_t);
-        n -= sizeof(size_t);
+    while (n >= 32) {
+        *(unaligned_u64 *)(d +  0) = *(const unaligned_u64 *)(s +  0);
+        *(unaligned_u64 *)(d +  8) = *(const unaligned_u64 *)(s +  8);
+        *(unaligned_u64 *)(d + 16) = *(const unaligned_u64 *)(s + 16);
+        *(unaligned_u64 *)(d + 24) = *(const unaligned_u64 *)(s + 24);
+        d += 32;
+        s += 32;
+        n -= 32;
+    }
+
+    while (n >= 8) {
+        *(unaligned_u64 *)d = *(const unaligned_u64 *)s;
+        d += 8;
+        s += 8;
+        n -= 8;
     }
 
     while (n--) {
         *d++ = *s++;
     }
 
-    return dest;
+    return ret;
+#endif
 }
 
 void *memmove(void *dest, const void *src, size_t n) {
@@ -99,14 +125,35 @@ char *strchr(const char *str, int c) {
     return (c == '\0') ? (char *)str : NULL;
 }
 
+size_t strlen(const char *str) {
+    size_t len = 0;
+    if (str == NULL)
+        return 0;
+    while (*str++ != '\0')
+        ++len;
+    return len;
+}
+
+char* strrchr(const char *str, int c) {
+    const char *last = NULL;
+    if (str == NULL)
+        return NULL;
+    for (;;) {
+        if (*str == (char)c)
+            last = str;
+        if (*str == '\0')
+            break;
+        ++str;
+    }
+    return (char *)last;
+}
+
 /*
 
 TODO: Implement these
 
-char *strrchr(const char *str, int c);
 char *strstr(const char *haystack, const char *needle);
 char *strncpy(char *dest, const char *src, size_t n);
 char *strcat(char *dest, const char *src);
 char *strncat(char *dest, const char *src, size_t n);
-size_t strlen(const char *str);
 */

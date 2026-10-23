@@ -4,6 +4,8 @@
 #include "../lib/stdio.h"
 #include "../lib/string.h"
 #include <stdint.h>
+#include "../config.h"
+#include "../graphics/graphics.h"
 
 
 void panic_ready(uint64_t sh, uint64_t sw);

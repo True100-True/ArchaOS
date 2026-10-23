@@ -5,6 +5,7 @@
 #include "../lib/math.h"
 #include "../lib/kmalloc.h"
 #include "../lib/string.h"
+#include "../lib/time.h"
 
 void start_demo_show(uint64_t fb_size);
 

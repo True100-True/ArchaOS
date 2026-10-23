@@ -66,7 +66,8 @@ void init_cpu() {
     print("Finalizing ARCH (x86_64)\n\n");
     asm("cli");
     print("[+] Loading TSS..\n");
-    //init_tss(); // -- I need to finally write the tss
+    //init_tss(); // -- I need to finally write tss
+
     print("[+] Reloading GDT..");
     init_gdt();
     print("OK\n"); // [~] Loaded GDT
@@ -90,8 +91,9 @@ void init_cpu() {
     taken (if ACPI supported):
     0xff - sprunius vector ACPI
     32 - timer
-    33 - scheduler
-    34 - IO
+    34 - IO 1 (also specified)
+    35 - IO 2 (specified aswell)
+    36 - scheduler (application specific)
     //// IRQ's
     0 - TIMER
     
@@ -141,7 +143,7 @@ void init_cpu() {
     idt_set_gate(idt, 0x20, tick_interrupt); // irq 0 is 0x20 vector
     */
     asm("sti");
-    print("[+] Loading SYSCALL..");
+    print("[+] Loading SYSCALL.."); // From this point it is safe to assign and manipulate with syscalls
     status = init_syscalls();
     if (status == true) {
         print("OK\n");

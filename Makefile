@@ -6,6 +6,8 @@ kernel:
 	$(MAKE) -C kernel
 bootloader: kernel
 	$(MAKE) -C bootloader
+drivers:
+	$(MAKE) -C drivers
 
 run: bootloader
 	$(MAKE) -C bootloader run
@@ -15,5 +17,5 @@ debug: bootloader
 clean:
 	$(MAKE) -C kernel clean
 	$(MAKE) -C bootloader clean
-	find . -type f \( -name "*.EFI" -o -name "*.bin" -o -name "*.elf" -o -name "*.o" \) -delete
+	find . -type f \( -name "*.EFI" -o -name "*.bin" -o -name "*.elf" -o -name "*.o" -o -name "*.cpio" \) -delete
 # Flash to usb sudo dd of=[USB] if=./bootloader/img.img bs=4M status=progress

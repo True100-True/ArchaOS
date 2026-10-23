@@ -25,8 +25,10 @@ typedef struct {
     uint64_t kernel_physical_address_end;
 
     uint64_t kernel_virtual_address;
-    
     uint64_t kernel_size;
+
+    uint64_t initramfs_address;
+    uint64_t initramfs_size;
 } BootInfo;
 
 #endif

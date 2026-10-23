@@ -622,6 +622,126 @@ VOID EFIAPI GopInstalledCallback(
 
 
 
+EFI_STATUS load_file(
+    EFI_HANDLE ImageHandle,
+    EFI_SYSTEM_TABLE *SystemTable,
+    const CHAR16 *path,
+    EFI_PHYSICAL_ADDRESS loadAddress,
+    UINTN *fileSize,
+    EFI_LOADED_IMAGE_PROTOCOL **LoadedImage
+)
+{
+    EFI_STATUS Status;
+    //EFI_LOADED_IMAGE_PROTOCOL *LoadedImage;
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs;
+    EFI_FILE_PROTOCOL *root;
+    EFI_FILE_PROTOCOL *file;
+    EFI_FILE_INFO *fileInfo = NULL;
+    EFI_GUID LoadedImageGuid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
+    EFI_GUID fsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
+    EFI_GUID FileInfoGuid = EFI_FILE_INFO_ID;
+    UINTN fileInfoSize = 0;
+    VOID *fileBuffer = NULL;
+    UINTN readSize;
+
+    if (path == NULL || fileSize == NULL) return EFI_INVALID_PARAMETER;
+    *fileSize = 0;
+
+    Status = gBS->HandleProtocol(
+        ImageHandle,
+        &LoadedImageGuid,
+        (VOID**)LoadedImage
+    );
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] Failed to get loaded image");
+        return Status;
+    }
+
+    Status = gBS->HandleProtocol(
+        (*LoadedImage)->DeviceHandle,
+        &fsGuid,
+        (VOID**)&fs
+    );
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] No filesystem on device");
+        return Status;
+    }
+
+    Status = fs->OpenVolume(fs, &root);
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] OpenVolume failed");
+        return Status;
+    }
+
+    Status = root->Open(root, &file, (CHAR16*)path, EFI_FILE_MODE_READ, 0);
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] File not found");
+        root->Close(root);
+        return Status;
+    }
+
+    Status = file->GetInfo(file, &FileInfoGuid, &fileInfoSize, NULL);
+    if (Status != EFI_BUFFER_TOO_SMALL) {
+        uefi_println(SystemTable, L"[!] GetInfo size failed");
+        goto load_file_cleanup;
+    }
+
+    Status = gBS->AllocatePool(EfiLoaderData, fileInfoSize, (VOID**)&fileInfo);
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] FileInfo allocation failed");
+        goto load_file_cleanup;
+    }
+
+    Status = file->GetInfo(file, &FileInfoGuid, &fileInfoSize, fileInfo);
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] GetInfo failed");
+        goto load_file_cleanup;
+    }
+
+    *fileSize = fileInfo->FileSize;
+    if (*fileSize == 0) {
+        Status = EFI_LOAD_ERROR;
+        uefi_println(SystemTable, L"[!] File is empty");
+        goto load_file_cleanup;
+    }
+
+    Status = gBS->AllocatePool(EfiLoaderData, *fileSize, &fileBuffer);
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] File buffer failed");
+        goto load_file_cleanup;
+    }
+
+    readSize = *fileSize;
+    Status = file->Read(file, &readSize, fileBuffer);
+    if (EFI_ERROR(Status) || readSize != *fileSize) {
+        uefi_println(SystemTable, L"[!] File read failed");
+        if (!EFI_ERROR(Status)) Status = EFI_LOAD_ERROR;
+        goto load_file_cleanup;
+    }
+
+    Status = gBS->AllocatePages(
+        AllocateAddress,
+        EfiLoaderData,
+        EFI_SIZE_TO_PAGES(*fileSize),
+        &loadAddress
+    );
+    if (EFI_ERROR(Status)) {
+        uefi_println(SystemTable, L"[!] File pages failed");
+        goto load_file_cleanup;
+    }
+
+    gBS->CopyMem((VOID*)(UINTN)loadAddress, fileBuffer, *fileSize);
+    //uefi_println(SystemTable, L"[+] File loaded into memory");
+
+load_file_cleanup:
+    if (fileBuffer != NULL) gBS->FreePool(fileBuffer);
+    if (fileInfo != NULL) gBS->FreePool(fileInfo);
+    file->Close(file);
+    root->Close(root);
+    if (EFI_ERROR(Status)) *fileSize = 0;
+    return Status;
+}
+
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     gBS = SystemTable->BootServices;
     SystemTable->ConOut->ClearScreen(SystemTable->ConOut);
@@ -1058,181 +1178,40 @@ gpu_gop_end:
     */
 
 ram_init_end:
-    uefi_println(SystemTable, L"--- KERNEL RESOURCES ---");
-
-
     uefi_println(SystemTable, L"--- KERNEL ---");
-    uefi_println(SystemTable, L"[+] Loading main kernel...");
-
-    // goto kernel_end_end; // DISABLED, kernel always crashes
-
-    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs;
-    EFI_FILE_PROTOCOL *root;
-    EFI_FILE_PROTOCOL *kernelFile;
-    EFI_FILE_INFO *fileInfo = NULL;
-    EFI_GUID fsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
-    EFI_FILE_PROTOCOL *fileProt;
-
+    uefi_println(SystemTable, L"[+] Loading files...");
     EFI_LOADED_IMAGE_PROTOCOL *LoadedImage;
 
-    EFI_GUID LoadedImageGuid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
-
-    Status = gBS->HandleProtocol(
+    uefi_print(SystemTable, L"[+] Loading kernel...");
+    UINTN kernelSize = 0;
+    EFI_PHYSICAL_ADDRESS kernelAddr = 0x600000;
+    Status = load_file(
         ImageHandle,
-        &LoadedImageGuid,
-        (VOID**)&LoadedImage
-    );
-
-    if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] Failed to get loaded image");
-        goto panic;
-    }
-
-    
-    Status = gBS->HandleProtocol(
-        LoadedImage->DeviceHandle,
-        &fsGuid,
-        (VOID**)&fs
-    );
-
-    if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] No filesystem on device");
-        goto panic;
-    }
-    
-    /*
-
-    EFI_HANDLE *handles;
-    UINTN count;
-
-    Status = gBS->LocateHandleBuffer(
-        ByProtocol,
-        &fsGuid,
-        NULL,
-        &count,
-        &handles
-    );
-
-    if (EFI_ERROR(Status))
-    {
-        uefi_println(SystemTable, L"[F] No filesystem handles");
-    }
-    else
-    {
-        uefi_println(SystemTable, L"[+] Filesystem exists!");
-    }
-    */
-
-    Status = fs->OpenVolume(
-        fs,
-        &root
-    );
-    if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] OpenVolume failed");
-        goto panic;
-    }
-
-    Status = root->Open(
-        root,
-        &kernelFile,
+        SystemTable,
         L"kernel.elf",
-        EFI_FILE_MODE_READ,
-        0
+        kernelAddr,
+        &kernelSize,
+        &LoadedImage
     );
-
-    if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] kernel.bin not found");
-        goto panic;
-    }
-
+    if (EFI_ERROR(Status)) goto panic;
+    uefi_println(SystemTable, L"OK");
     
-    EFI_GUID FileInfoGuid = EFI_FILE_INFO_ID;
-    UINTN fileInfoSize = 0;
-    Status = kernelFile->GetInfo(
-        kernelFile,
-        &FileInfoGuid,
-        &fileInfoSize,
-        NULL
+    uefi_print(SystemTable, L"[+] Loading ramdisk...");
+    UINTN ramdisk_size = 0;
+    EFI_PHYSICAL_ADDRESS ramdisk_addr = 0x300000;
+    Status = load_file(
+        ImageHandle, 
+        SystemTable, 
+        L"ramdiskfs.cpio",
+        ramdisk_addr, 
+        &ramdisk_size,
+        &LoadedImage
     );
-
-    if (Status != EFI_BUFFER_TOO_SMALL) {
-        uefi_println(SystemTable, L"[!] GetInfo size failed");
-        uefi_status_print(SystemTable, Status); // Does print EFI_BUFFER_TOO_SMALL???
-        goto panic;
-    }
-
-    Status = gBS->AllocatePool(
-        EfiLoaderData,
-        fileInfoSize,
-        (VOID**)&fileInfo
-    );
-    if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] FileInfo allocation failed");
-        goto panic;
-    }
-
-    Status = kernelFile->GetInfo(
-        kernelFile,
-        &FileInfoGuid,
-        &fileInfoSize,
-        fileInfo
-    );
-
-    if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] GetInfo failed");
-        goto panic;
-    }
-
-
-    UINTN kernelSize = fileInfo->FileSize;
-    uefi_println(SystemTable, L"[+] Kernel size found");
-    VOID *kernelBuffer = NULL;
-
-    Status = gBS->AllocatePool(
-        EfiLoaderData,
-        kernelSize,
-        &kernelBuffer
-    );
-
-    if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] Kernel buffer failed");
-        goto panic;
-    }
-    UINTN readSize = kernelSize;
-
-    Status = kernelFile->Read(
-        kernelFile,
-        &readSize,
-        kernelBuffer
-    );
-
-    if (EFI_ERROR(Status) || readSize != kernelSize)
-    {
-        uefi_println(SystemTable, L"[!] Kernel read failed");
-        goto panic;
-    }
-
+    if (EFI_ERROR(Status)) goto panic;
+    uefi_println(SystemTable, L"OK");
     
-    uefi_println(SystemTable, L"[+] Kernel loaded into buffer");
-    EFI_PHYSICAL_ADDRESS kernelAddr = 0x100000;
-    Status = gBS->AllocatePages(
-        AllocateAnyPages,
-        EfiLoaderData,
-        EFI_SIZE_TO_PAGES(kernelSize),
-        &kernelAddr
-    );
-    if (EFI_ERROR(Status)) {
-        uefi_println(SystemTable, L"[!] Kernel pages failed");
-        goto panic;
-    }
-    gBS->CopyMem(
-        (VOID*)kernelAddr,
-        kernelBuffer,
-        kernelSize
-    );
+    // WARN: 0x0000000080000000 is framebuffer (atleast on my vm)
     
-    uefi_println(SystemTable, L"[+] Kernel copied");
-
     uefi_print(SystemTable, L"kernelPhysAddr = ");
     uefi_print_hex(SystemTable, kernelAddr);
 
@@ -1389,7 +1368,7 @@ kernel_load_end:
         (VOID **)&Edid
     );
 
-    int preferClassic = 1;
+    int preferClassic = 1; // prefer 1920x1080
 
     // Parse the edid
     if (EFI_ERROR(Status) || Edid == NULL ||
@@ -1493,6 +1472,8 @@ gop_pick:
     }
     uefi_println(SystemTable, L"Mode was choosen..");
     if (skip_monitor) {
+        /* Without EDID, retain the firmware's known-good active mode. */
+        choosenMode = gop->Mode->Mode;
         goto gop_end;
     }
     // Only on real hardware this is possible (my qemu doesnt allow me to do so) (read or access EDID)
@@ -1521,13 +1502,20 @@ gop_end:
     uefi_println(SystemTable, bufff);
     uefi_print(SystemTable, L"framebuffer_size=");
     uefi_print_hex(SystemTable, gop->Mode->FrameBufferSize);
+    uefi_print(SystemTable, L"framebuffer_addr=");
+    //decimalConvert(gop->Mode->FrameBufferBase, bufff, 256);
+    //uefi_println(SystemTable, bufff);
+    uefi_print_hex(SystemTable, gop->Mode->FrameBufferBase);
+    uefi_println(SystemTable, L"");
 
     uefi_println(SystemTable, L"Press any key to enter kernel...");
     EFI_INPUT_KEY k;
     while (SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &k) != EFI_SUCCESS)
         ;
     uefi_println(SystemTable, L"[+] Entering GOP mode..");
-    Status = gop->SetMode(gop, choosenMode);
+    Status = (gop->Mode->Mode == choosenMode)
+        ? EFI_SUCCESS : gop->SetMode(gop, choosenMode);
+    Status = EFI_SUCCESS;
     if (EFI_ERROR(Status)) {
         uefi_println(SystemTable, L"[!] Failed to set GOP mode.");
         goto panic; // Later try to initialize other functions and let kernel do its own thing
@@ -1677,7 +1665,12 @@ gop_end:
         gop->Mode->Info->PixelsPerScanLine;
     bootInfo->framebuffer_pixel_format =
         gop->Mode->Info->PixelFormat;
-
+    
+    
+    bootInfo->initramfs_address = ramdisk_addr;
+    bootInfo->initramfs_size = ramdisk_size;
+    
+    
     /*
 
     bootInfo->kernel_virtual_address = phdr->p_paddr;
@@ -1688,7 +1681,7 @@ gop_end:
     bootInfo->kernel_size = kernelSize;
     */
 
-    bootInfo->kernel_physical_address = kernelAddr;
+    bootInfo->kernel_physical_address = kernel_phys_start;
     bootInfo->kernel_physical_address_start = kernel_phys_start;
     bootInfo->kernel_physical_address_end   = kernel_phys_end;
 

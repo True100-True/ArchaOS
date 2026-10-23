@@ -262,6 +262,15 @@ void *kmalloc(uint64_t size)
     return (void *)(chunk + 1);
 }
 
+void *kcalloc(unsigned int num_of_items, size_t len_of_items) {
+    if (num_of_items == 0 || len_of_items == 0)
+        return NULL;
+    int size = num_of_items * len_of_items;
+    void* ptr = kmalloc(size);
+    memset(ptr, 0, size);
+    return ptr;
+}
+
 
 void kfree(void *ptr)
 {

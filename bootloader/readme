@@ -13,4 +13,4 @@ uefi.c - Main boot file, the first thing that reaches the uefi, there are 2 vers
            loads kernel and passes information to it using kernelentry kernelbuffers
            initializes GOP and passes the handler to kernel.
 
-bootloader version: 0.0.2
+bootloader version: 0.0.4

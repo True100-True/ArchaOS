@@ -11,6 +11,9 @@
 #define KERNEL_DS  0x10
 #define USER_CS    0x18
 #define USER_DS    0x20
+
+#define TSS_GDT_INDEX 5
+#define TSS_SELECTOR  ((uint16_t)(TSS_GDT_INDEX << 3))
  
 // Each define here is for a specific flag in the descriptor.
 // Refer to the intel documentation for a description of what each one does.
@@ -73,6 +76,8 @@ struct gdt_entry {
 
 struct gdt_entry gdt[5];
 */
+
+#include "../tss/tss.h"
 
 uint64_t create_descriptor(uint32_t base, uint32_t limit, uint16_t flag);
 extern void setSegments();

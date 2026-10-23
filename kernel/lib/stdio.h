@@ -2,19 +2,23 @@
 #define STDIO_H
 
 #include <stdint.h>
-#include "../graphics/graphics.h"
+#include "../config.h"
+//#include "../graphics/graphics.h"
 
 // ---- QEMU TEST ONLY -----
-#if !defined(QEMU_TEST) || QEMU_TEST == 1
+// defined(QEMU_TEST) ||
+#if defined(QEMU_TEST) || QEMU_TEST == 1
 void serial_init();
 void serial_putchar(char c);
 void serial_print(const char* str);
 void serial_print_hex(uint64_t value);
+void serial_print_dec(uint64_t N);
 #else
 static inline void serial_init(void) {}
 static inline void serial_putchar(char c) { (void)c; }
 static inline void serial_print(const char *str) { (void)str; }
 static inline void serial_print_hex(uint64_t value) { (void)value; }
+static inline void serial_print_dec(uint64_t N) { (void)N; }
 #endif
 // Remove with #ifndef NOT_QEMU_TEST !!!!!!!!
 

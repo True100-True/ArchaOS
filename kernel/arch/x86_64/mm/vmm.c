@@ -430,37 +430,47 @@ void init_vmm(BootInfo *boot) {
     map_range(0, PASSTHRU_BASE, max_physical_address, pml4_phys);
     print("DONE\n");
 
-    print("\t[~] APIC..");
-    // Loop thru Memory map and find APIC reserved mem chunks 
-    uint64_t entries = boot->memory_map_size / boot->memory_descriptor_size;
-    for(uint64_t i = 0; i < entries; i++) {
-        EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) (
-                (uint8_t*)boot->memory_map + i * boot->memory_descriptor_size );
-        if (desc->Type == EfiConventionalMemory) {
-            switch (desc->Type) {
-                case EfiConventionalMemory:
-                case EfiLoaderCode:
-                case EfiLoaderData:
-                case EfiBootServicesCode:
-                case EfiBootServicesData:
-                case EfiRuntimeServicesCode:
-                case EfiRuntimeServicesData:
-                case EfiACPIReclaimMemory:
-                    map_range(desc->PhysicalStart, desc->PhysicalStart, desc->NumberOfPages * PAGE_SIZE, pml4_phys);
-                    break;
-                case EfiACPIMemoryNVS:
-                    map_range(desc->PhysicalStart, desc->PhysicalStart, desc->NumberOfPages * PAGE_SIZE, pml4_phys);
-                    break;
+    print("\t[~] ramdiskfs..");
+    map_range(boot->initramfs_address, boot->initramfs_address, boot->initramfs_size, pml4_phys);
+    print("DONE\n");
+
+    struct cpuid_result cres = cpuid_(1, 0); // leaf 1, subleaf 0
+    bool support_apic   = (cres.edx & (1 << 9)) != 0;
+    bool support_x2apic = (cres.ecx & (1 << 21)) != 0;
+
+    if (support_apic) {
+        print("\t[~] APIC..");
+        // Loop thru Memory map and find APIC reserved mem chunks 
+        uint64_t entries = boot->memory_map_size / boot->memory_descriptor_size;
+        for(uint64_t i = 0; i < entries; i++) {
+            EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) (
+                    (uint8_t*)boot->memory_map + i * boot->memory_descriptor_size );
+            if (desc->Type == EfiConventionalMemory) {
+                switch (desc->Type) {
+                    case EfiConventionalMemory:
+                    case EfiLoaderCode:
+                    case EfiLoaderData:
+                    case EfiBootServicesCode:
+                    case EfiBootServicesData:
+                    case EfiRuntimeServicesCode:
+                    case EfiRuntimeServicesData:
+                    case EfiACPIReclaimMemory:
+                        map_range(desc->PhysicalStart, desc->PhysicalStart, desc->NumberOfPages * PAGE_SIZE, pml4_phys);
+                        break;
+                    case EfiACPIMemoryNVS:
+                        map_range(desc->PhysicalStart, desc->PhysicalStart, desc->NumberOfPages * PAGE_SIZE, pml4_phys);
+                        break;
+                }
             }
         }
-    }
-    // Can not forget about APIC MMIO (~4kilobytes in size)
-    uint64_t apic_record = rdmsr(0x1B);
-    uint64_t apic_page = (apic_record >> 12) & 0xFFFFFULL;
-    uint64_t apic_base = apic_page << 12;
-    map_range(apic_base, apic_base, 0x4000, pml4_phys);
+        // Can not forget about APIC MMIO (~4kilobytes in size)
+        uint64_t apic_record = rdmsr(0x1B);
+        uint64_t apic_page = (apic_record >> 12) & 0xFFFFFULL;
+        uint64_t apic_base = apic_page << 12;
+        map_range(apic_base, apic_base, 0x4000, pml4_phys);
 
-    print("OK\n");
+        print("OK\n");
+    }
 
     print("\t[~] Other..");
     // BootInfo

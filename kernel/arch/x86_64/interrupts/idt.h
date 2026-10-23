@@ -2,7 +2,9 @@
 #define IDT_H
 
 #include <stdint.h>
-#include "../timer/clock.h" // For tick_timer
+#include "../cpu/gdt/gdt.h"
+#include "../../../lib/stdbool.h"
+//#include "../timer/clock.h" // For tick_timer
 
 struct idt_entry {
     uint16_t offset_low;

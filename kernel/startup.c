@@ -19,6 +19,9 @@ KernelHeader header = {
 
 #include "kernel_apps/demo.h"
 
+#include "lib/time.h" // Experimental
+#include "fs/fs.h"
+
 /*
 typedef struct {
     uint64_t magic;
@@ -51,6 +54,9 @@ void kernel_main(BootInfo *boot) {
     serial_putchar('N');
     serial_putchar('L');
     */
+
+    //while (1)
+    //    asm("hlt");
 
     const char *kernel_version = "CORE 0.1.3"; 
 
@@ -85,6 +91,10 @@ void kernel_main(BootInfo *boot) {
         serial_print("\t[!] Unsupported frame buffer pixel format...\n");
         return;
     }
+    if (boot->initramfs_address == 0 || boot->initramfs_size == 0) {
+        serial_print("\t[!] Initramfs is not valid.\n");
+        return;
+    }
 
     // MOVE THIS TO GRAPHICS.h !!!!!!!!!!
 
@@ -96,11 +106,11 @@ void kernel_main(BootInfo *boot) {
     framebuffer_fb.pitch = boot->pixels_per_scanline;
 
     serial_print("Resolution:\nWidth: ");
-    serial_print_hex(framebuffer_fb.width);
-    serial_print("Height: ");
-    serial_print_hex(framebuffer_fb.height);
-    serial_print("Pitch: ");
-    serial_print_hex(framebuffer_fb.pitch);
+    serial_print_dec(framebuffer_fb.width);
+    serial_print("\nHeight: ");
+    serial_print_dec(framebuffer_fb.height);
+    serial_print("\nPitch: ");
+    serial_print_dec(framebuffer_fb.pitch);
     serial_print("\n");
 
     // MUST be in this anarchy, First graphics, then print
@@ -124,6 +134,9 @@ void kernel_main(BootInfo *boot) {
 
     kmalloc_init();
 
+    init_fs(boot);
+    
+
     print("\n\n");
 
     print("Total memory: %n MB\n", total_memory / (1024*1024));
@@ -138,15 +151,35 @@ void kernel_main(BootInfo *boot) {
     print("\twidth:   %lx \n", (uint64_t)framebuffer_pb->width);
     print("\theight:  %lx \n", (uint64_t)framebuffer_pb->height);
     print("\tpitch:   %lx \n\n", (uint64_t)framebuffer_pb->pitch);
-
-    print("All done.\n");
-
     start_clock();
-
-    print("Ticks: %u \r", get_ticks());
+    print("Testing time: \n");
+    print("Ticks: %u \r", get_ticks()); // Check if time even works
     while (get_ticks() != 200) {
         print("Ticks: %u \r", get_ticks());
     }
+
+    // Doesnt work btw
+    kernel_sleep_ms(1000); // Sleep for second...
+
+    // Initialize from ramdisk binit (bin init) basic drivers
+    // Now, we can printout and list files and dirs
+
+    struct file* list = NULL;
+    enum FS_RETURN a = list_files("/", &list); // fs.h ( further questions: kernel/fs/fs.h)
+    if (!(a & FS_SUCCESS)) {
+        print("Failed to list in directory...\n");
+    } else {
+        print("List of files in root (/): \n");
+        for (struct file* tfiles = list; tfiles != NULL; tfiles = tfiles->next) {
+            //print("\tItem: name=%s, id=%s, flags=%u \n", tfiles->name, tfiles->id, tfiles->flags);
+            if (tfiles->flags == FS_IS_DIRECTORY) {
+                print("\tFolder: %s \n", tfiles->name);
+            } else {
+                print("\tFile: %s \n", tfiles->name);
+            }
+        }
+    }
+
     
 
     // Demo !!! -- A show off until I can make all of it
@@ -155,7 +188,7 @@ void kernel_main(BootInfo *boot) {
     // buffer (framebuffer_t) source x,y destionation x,y color
     //fill_rect(1,1, framebuffer_pb->width,framebuffer_pb->height, 0x00102030);
     start_demo_show(boot->framebuffer_size);
-    
+
     while (1)
         asm("hlt");
 }
