@@ -1,5 +1,6 @@
-- Fixed virtual memory issues
-- Fixed where the kernel is beign loaded
+- Added RAMDISK loading
+- load_file() function 
+- Added a bug where when prefered 1920x1080mode it doesn't pick it
 
 TODO
 - Fix the warnings (some are dangerous on HW)

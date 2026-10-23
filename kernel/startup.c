@@ -58,7 +58,7 @@ void kernel_main(BootInfo *boot) {
     //while (1)
     //    asm("hlt");
 
-    const char *kernel_version = "CORE 0.1.3"; 
+    const char *kernel_version = "CORE 0.1.4"; 
 
     serial_init();
 

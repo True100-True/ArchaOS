@@ -1,21 +1,26 @@
-Oct. 1 2026
+Oct. 23 2026
 - Updated README (started some kernel documentation)
-- Fixed interrupts
-- Fixed clock and APIC
-- Some graphics library is done
-- Removed some of borrowed code
-- fixed valloc, palloc 
-- finish some stuff around APIC
+- Added filesystem
+- Added ramdisk fuctionality
+- Filesystem is now populated mostly by ramdisk
+- Fixed APIC completly 
+- Added time.h (some time managing)
+- Added GRS (Global Registry System)
+- Added syscall config mode
+- Slowly finish kernel core
+
 
 TODO:
-- Start working on PLAYGROUND
-- Document kernel's desired architecture
+- Document kernel's desired architecture (in progress)
 - Finish process in x86_64 architecture
-- Add modes
 - Fix the on HW APIC MMIO bug
+- Add IDT customizability
+- Work on drivers (both primitives AND harder ones)
+- Work on playground 
+- 
 
-(Break aswell)
-(need hardware to test on)
+
+(Hardware test did NOT passed!!!)
 
 
 //// FIX THE ERROR WITH ACPI CRASHING OUT 
